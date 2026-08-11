@@ -1,0 +1,74 @@
+[
+  {
+    "id": "guard",
+    "name": "방패병",
+    "moveLabel": "8방향 1칸",
+    "move": { "kind": "ray", "dirs": "all8", "range": 1 },
+    "hp": 34,
+    "atk": 4,
+    "sp": 6,
+    "eva": 10,
+    "spd": 6,
+    "cost": 3
+  },
+  {
+    "id": "lancer",
+    "name": "창병",
+    "moveLabel": "직선 최대 2칸",
+    "move": { "kind": "ray", "dirs": "orth", "range": 2 },
+    "hp": 26,
+    "atk": 6,
+    "sp": 8,
+    "eva": 15,
+    "spd": 9,
+    "cost": 3
+  },
+  {
+    "id": "rider",
+    "name": "기병",
+    "moveLabel": "L자 도약",
+    "move": { "kind": "jump", "dirs": "knight", "range": 1 },
+    "hp": 24,
+    "atk": 7,
+    "sp": 6,
+    "eva": 20,
+    "spd": 12,
+    "cost": 4
+  },
+  {
+    "id": "acolyte",
+    "name": "사제",
+    "moveLabel": "대각 최대 3칸",
+    "move": { "kind": "ray", "dirs": "diag", "range": 3 },
+    "hp": 18,
+    "atk": 3,
+    "sp": 14,
+    "eva": 15,
+    "spd": 8,
+    "cost": 3
+  },
+  {
+    "id": "ranger",
+    "name": "순찰자",
+    "moveLabel": "8방향 최대 2칸",
+    "move": { "kind": "ray", "dirs": "all8", "range": 2 },
+    "hp": 20,
+    "atk": 5,
+    "sp": 10,
+    "eva": 25,
+    "spd": 11,
+    "cost": 4
+  },
+  {
+    "id": "warlord",
+    "name": "장군",
+    "moveLabel": "전방향 최대 3칸",
+    "move": { "kind": "ray", "dirs": "all8", "range": 3 },
+    "hp": 30,
+    "atk": 8,
+    "sp": 12,
+    "eva": 20,
+    "spd": 14,
+    "cost": 6
+  }
+]

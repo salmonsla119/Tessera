@@ -1,0 +1,482 @@
+import Phaser from 'phaser';
+import { requireSkill, type Skill } from '@tessera/data';
+import {
+  chebyshev,
+  deployZoneCells,
+  isSkillLocked,
+  movableCells,
+  previewDamage,
+  usableSkills,
+  validTargets,
+  type Action,
+  type Coord,
+  type GameEvent,
+  type MatchState,
+  type PieceState,
+  type PlayerId,
+} from '@tessera/rules';
+import type { Backend, MatchView } from './backend/types';
+import { maskState } from './backend/types';
+import { BoardScene } from './game/BoardScene';
+import { BOARD_PX, baseName, skillName } from './game/theme';
+import { Hud, type HudModel, type LogEntry } from './ui/hud';
+import { showModal } from './ui/modal';
+
+async function createBoardScene(parentId: string): Promise<{ game: Phaser.Game; scene: BoardScene }> {
+  const scene = new BoardScene();
+  const ready = new Promise<void>((resolve) => {
+    scene.onReady = resolve;
+  });
+  const game = new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: parentId,
+    width: BOARD_PX,
+    height: BOARD_PX,
+    backgroundColor: '#0f1116',
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+    scene: [scene],
+  });
+  await ready;
+  return { game, scene };
+}
+
+/**
+ * 한 판의 진행을 맡는 컨트롤러.
+ *
+ * 규칙 판정은 전혀 하지 않는다 — 백엔드에 액션을 제출하고, 돌려받은 상태와 이벤트를
+ * 보드/HUD에 나눠 준다. 온라인 백엔드로 바꿔도 이 파일은 그대로 쓸 수 있다.
+ */
+export class MatchController {
+  private game!: Phaser.Game;
+  private scene!: BoardScene;
+  private hud!: Hud;
+
+  private matchId!: string;
+  private state!: MatchState;
+
+  /** 배치 단계에서 아직 제출하지 않은 임시 배치. */
+  private placements = new Map<string, Coord>();
+  private selectedId: string | null = null;
+  private activeSkillId: string | null = null;
+  /** 예상 데미지를 먼저 보여 주고, 같은 대상을 한 번 더 눌러야 확정된다 (GDD §3.1). */
+  private pendingTargetId: string | null = null;
+  private log: LogEntry[] = [];
+  private busy = false;
+  /** 턴 시작 시 받은 행동 횟수. TurnStarted 이벤트에서만 갱신한다. */
+  private apMax: Record<PlayerId, number> = { A: 0, B: 0 };
+
+  constructor(
+    private readonly backend: Backend,
+    private readonly boardEl: HTMLElement,
+    private readonly hudEl: HTMLElement,
+    private readonly onExit: () => void,
+  ) {}
+
+  async start(view: MatchView): Promise<void> {
+    this.matchId = view.matchId;
+    this.state = view.state;
+
+    const created = await createBoardScene(this.boardEl.id);
+    this.game = created.game;
+    this.scene = created.scene;
+    this.scene.onCellClick = (cell) => void this.handleCellClick(cell);
+
+    this.hud = new Hud(this.hudEl, {
+      onSelectSkill: (id) => this.selectSkill(id),
+      onFocus: () => void this.submit({ type: 'focus', player: this.viewer, pieceId: this.selectedId! }),
+      onEndTurn: () => void this.submit({ type: 'endTurn', player: this.viewer }),
+      onSubmitDeploy: () => void this.submitDeploy(),
+      onExit: () => void this.confirmExit(),
+    });
+
+    this.pushLog(`매치 시작 — 선공은 플레이어 ${this.state.first}`, undefined, true);
+
+    if (this.state.phase === 'deploying') {
+      await showModal({
+        title: `플레이어 ${this.viewer} 배치`,
+        body: '상대에게 화면이 보이지 않게 한 뒤 진행하세요.',
+        actions: [{ label: '시작', value: 'ok', primary: true }],
+      });
+    }
+
+    this.refresh();
+  }
+
+  destroy(): void {
+    this.game?.destroy(true);
+    this.hud?.destroy();
+    this.boardEl.replaceChildren();
+  }
+
+  /** 지금 화면을 보고 있는 플레이어. 배치 중에는 아직 제출하지 않은 쪽. */
+  private get viewer(): PlayerId {
+    if (this.state.phase === 'deploying') {
+      return this.state.deployedPlayers.includes('A') ? 'B' : 'A';
+    }
+    return this.state.turnOwner;
+  }
+
+  private get selected(): PieceState | null {
+    return this.state.pieces.find((p) => p.id === this.selectedId) ?? null;
+  }
+
+  // ---------- 배치 ----------
+
+  private ownPieces(player: PlayerId): PieceState[] {
+    return this.state.pieces.filter((p) => p.owner === player);
+  }
+
+  private nextUnplaced(): PieceState | null {
+    return this.ownPieces(this.viewer).find((p) => !this.placements.has(p.id)) ?? null;
+  }
+
+  /** 임시 배치를 반영한 표시용 상태. 실제 상태는 제출 전까지 바뀌지 않는다. */
+  private deployPreviewState(): MatchState {
+    const masked = maskState(this.state, this.viewer);
+    return {
+      ...masked,
+      pieces: masked.pieces.map((piece) => {
+        if (piece.owner !== this.viewer) return piece;
+        return { ...piece, pos: this.placements.get(piece.id) ?? null };
+      }),
+    };
+  }
+
+  private handleDeployClick(cell: Coord): void {
+    const zone = deployZoneCells(this.viewer);
+    if (!zone.some((c) => c.x === cell.x && c.y === cell.y)) return;
+
+    for (const [pieceId, pos] of this.placements) {
+      if (pos.x === cell.x && pos.y === cell.y) {
+        this.placements.delete(pieceId);
+        this.refresh();
+        return;
+      }
+    }
+
+    const next = this.nextUnplaced();
+    if (!next) return;
+    this.placements.set(next.id, cell);
+    this.refresh();
+  }
+
+  private async submitDeploy(): Promise<void> {
+    const player = this.viewer;
+    const action: Action = {
+      type: 'deploy',
+      player,
+      placements: [...this.placements].map(([pieceId, pos]) => ({ pieceId, pos })),
+    };
+
+    const view = await this.backend.submitAction(this.matchId, action);
+    this.ingestEvents(view.events, this.state);
+    this.state = view.state;
+    this.placements.clear();
+
+    if (this.state.phase === 'deploying') {
+      await showModal({
+        title: `플레이어 ${this.viewer}에게 넘기세요`,
+        body: '상대 배치는 아직 공개되지 않습니다.',
+        actions: [{ label: '확인', value: 'ok', primary: true }],
+      });
+    } else {
+      await showModal({
+        title: '배치 공개',
+        body: `양측 덱과 배치가 공개됩니다. 선공은 플레이어 ${this.state.first}입니다.`,
+        actions: [{ label: '전투 시작', value: 'ok', primary: true }],
+      });
+    }
+
+    this.refresh();
+  }
+
+  // ---------- 전투 ----------
+
+  private selectSkill(skillId: string): void {
+    this.activeSkillId = skillId;
+    this.pendingTargetId = null;
+    this.refresh();
+  }
+
+  private defaultSkillFor(piece: PieceState): string {
+    const usable = usableSkills(piece);
+    return (usable.length > 1 ? usable[1]! : usable[0]!).id;
+  }
+
+  private async handleCellClick(cell: Coord): Promise<void> {
+    if (this.busy || this.state.phase === 'finished') return;
+
+    if (this.state.phase === 'deploying') {
+      this.handleDeployClick(cell);
+      return;
+    }
+
+    const occupant = this.state.pieces.find(
+      (p) => p.alive && p.pos !== null && p.pos.x === cell.x && p.pos.y === cell.y,
+    );
+
+    if (occupant && occupant.owner === this.viewer) {
+      this.selectedId = occupant.id;
+      this.activeSkillId = this.defaultSkillFor(occupant);
+      this.pendingTargetId = null;
+      this.refresh();
+      return;
+    }
+
+    const attacker = this.selected;
+    if (!attacker) return;
+
+    if (occupant && this.activeSkillId) {
+      const skill = requireSkill(this.activeSkillId);
+      const inRange = validTargets(this.state, attacker, skill).some((t) => t.id === occupant.id);
+      if (!inRange) return;
+
+      // 첫 클릭은 예상 데미지 표시, 같은 대상 두 번째 클릭이 확정.
+      if (this.pendingTargetId !== occupant.id) {
+        this.pendingTargetId = occupant.id;
+        this.refresh();
+        return;
+      }
+
+      await this.submit({
+        type: 'attack',
+        player: this.viewer,
+        pieceId: attacker.id,
+        skillId: skill.id,
+        targetId: occupant.id,
+      });
+      return;
+    }
+
+    if (!occupant && movableCells(this.state, attacker).some((c) => c.x === cell.x && c.y === cell.y)) {
+      await this.submit({ type: 'move', player: this.viewer, pieceId: attacker.id, to: cell });
+    }
+  }
+
+  private async submit(action: Action): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      const previousTurnOwner = this.state.turnOwner;
+      const view = await this.backend.submitAction(this.matchId, action);
+      const nextState = view.state;
+
+      this.ingestEvents(view.events, this.state);
+
+      this.pendingTargetId = null;
+      await this.scene.playEvents(view.events, nextState);
+      this.state = nextState;
+
+      if (this.state.phase === 'finished') {
+        this.selectedId = null;
+        this.refresh();
+        await this.showResult();
+        return;
+      }
+
+      if (this.state.turnOwner !== previousTurnOwner) {
+        this.selectedId = null;
+        this.activeSkillId = null;
+        this.refresh();
+        await showModal({
+          title: `플레이어 ${this.state.turnOwner} 차례`,
+          body: '화면을 상대에게 넘기고 확인을 누르세요.',
+          actions: [{ label: '확인', value: 'ok', primary: true }],
+        });
+      }
+
+      this.refresh();
+    } catch (error) {
+      this.pushLog(error instanceof Error ? error.message : '알 수 없는 오류', undefined, true);
+      this.refresh();
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private async showResult(): Promise<void> {
+    const winner = this.state.winner;
+    await showModal({
+      title: winner === 'draw' ? '무승부' : `플레이어 ${winner} 승리`,
+      body: `${this.state.round}라운드 만에 종료되었습니다.`,
+      actions: [{ label: '메뉴로', value: 'ok', primary: true }],
+    });
+    await this.backend.abandonMatch(this.matchId);
+    this.onExit();
+  }
+
+  private async confirmExit(): Promise<void> {
+    const answer = await showModal({
+      title: '매치를 나갑니다',
+      body: '진행 상황은 저장되며 메뉴에서 이어할 수 있습니다.',
+      actions: [
+        { label: '취소', value: 'cancel' },
+        { label: '나가기', value: 'exit', primary: true },
+      ],
+    });
+    if (answer === 'exit') this.onExit();
+  }
+
+  // ---------- 렌더 ----------
+
+  private pushLog(text: string, owner?: PlayerId, highlight = false): void {
+    this.log.push({ text, owner, highlight });
+  }
+
+  /** 이벤트에서 기록과 파생 표시값을 뽑아낸다 — 상태를 다시 계산하지 않는다. */
+  private ingestEvents(events: readonly GameEvent[], before: MatchState): void {
+    for (const event of events) {
+      if (event.type === 'TurnStarted') this.apMax[event.player] = event.ap;
+    }
+    this.log.push(...describeEvents(events, before));
+  }
+
+  private refresh(): void {
+    const deploying = this.state.phase === 'deploying';
+    const viewState = deploying ? this.deployPreviewState() : this.state;
+
+    this.scene.sync(viewState, this.viewer);
+    this.scene.setHighlights(this.computeHighlights(viewState));
+    this.hud.render(this.buildHudModel());
+  }
+
+  private computeHighlights(viewState: MatchState) {
+    if (this.state.phase === 'deploying') {
+      return { deploy: deployZoneCells(this.viewer) };
+    }
+
+    const piece = this.selected;
+    if (!piece || !piece.alive || piece.pos === null || this.state.turnOwner !== this.viewer) {
+      return {};
+    }
+
+    const skill = this.activeSkillId ? requireSkill(this.activeSkillId) : null;
+    const attack = skill
+      ? validTargets(viewState, piece, skill)
+          .map((t) => t.pos)
+          .filter((pos): pos is Coord => pos !== null)
+      : [];
+
+    return {
+      move: this.state.ap[this.viewer] > 0 ? movableCells(viewState, piece) : [],
+      attack,
+      selected: piece.pos,
+    };
+  }
+
+  private buildHudModel(): HudModel {
+    const piece = this.selected;
+    const viewer = this.viewer;
+    const skills: Skill[] = piece ? usableSkills(piece) : [];
+    const locked = piece && isSkillLocked(piece) ? requireSkill(piece.skillId) : null;
+
+    let preview: HudModel['preview'] = null;
+    if (piece && piece.pos && this.pendingTargetId && this.activeSkillId) {
+      const target = this.state.pieces.find((p) => p.id === this.pendingTargetId);
+      if (target?.pos) {
+        const distance = chebyshev(piece.pos, target.pos);
+        preview = {
+          targetName: `${baseName(target.baseId)}(${skillName(target.skillId)})`,
+          distance,
+          range: previewDamage(piece, requireSkill(this.activeSkillId), distance),
+        };
+      }
+    }
+
+    const placed = this.placements.size;
+
+    return {
+      phase: this.state.phase,
+      viewer,
+      round: this.state.round,
+      ap: this.state.ap[viewer],
+      apMax: this.apMaxFor(viewer),
+      carryTenths: this.state.apPoolTenths[viewer],
+      teamSpeed: this.state.teamSpeed[viewer],
+      aliveA: this.state.pieces.filter((p) => p.owner === 'A' && p.alive).length,
+      aliveB: this.state.pieces.filter((p) => p.owner === 'B' && p.alive).length,
+      suddenDeath: this.state.suddenDeath,
+      selected: piece,
+      activeSkillId: this.activeSkillId,
+      usableSkills: skills,
+      lockedSkill: locked,
+      canFocus: Boolean(
+        piece &&
+          this.state.phase === 'battle' &&
+          this.state.turnOwner === viewer &&
+          this.state.ap[viewer] > 0 &&
+          piece.sp < piece.maxSp,
+      ),
+      deployRemaining: this.ownPieces(viewer).length - placed,
+      preview,
+      log: this.log,
+    };
+  }
+
+  private apMaxFor(player: PlayerId): number {
+    return this.apMax[player];
+  }
+}
+
+/** 이벤트를 사람이 읽는 한 줄짜리 기록으로 바꾼다. */
+function describeEvents(events: readonly GameEvent[], before: MatchState): LogEntry[] {
+  const nameOf = (id: string) => {
+    const piece = before.pieces.find((p) => p.id === id);
+    return piece ? `${piece.owner}·${baseName(piece.baseId)}` : id;
+  };
+  const ownerOf = (id: string) => before.pieces.find((p) => p.id === id)?.owner;
+
+  const entries: LogEntry[] = [];
+  for (const event of events) {
+    switch (event.type) {
+      case 'Deployed':
+        entries.push({ text: `플레이어 ${event.player} 배치 완료`, owner: event.player });
+        break;
+      case 'BattleStarted':
+        entries.push({ text: '배치 공개 — 전투 시작', highlight: true });
+        break;
+      case 'PieceMoved':
+        entries.push({ text: `${nameOf(event.pieceId)} 이동`, owner: ownerOf(event.pieceId) });
+        break;
+      case 'SkillUsed':
+        entries.push({
+          text: `${nameOf(event.pieceId)} → ${nameOf(event.targetId)} · ${skillName(event.skillId)} (거리 ${event.distance}, 예상 ${event.preview.min}~${event.preview.max})`,
+          owner: ownerOf(event.pieceId),
+        });
+        break;
+      case 'Evaded':
+        entries.push({ text: `${nameOf(event.pieceId)} 회피 성공`, owner: ownerOf(event.pieceId) });
+        break;
+      case 'Damaged':
+        entries.push({
+          text: `${nameOf(event.pieceId)} HP −${event.amount} (${event.hp} 남음)`,
+          owner: ownerOf(event.pieceId),
+        });
+        break;
+      case 'Focused':
+        entries.push({ text: `${nameOf(event.pieceId)} 집중 · SP ${event.sp}`, owner: ownerOf(event.pieceId) });
+        break;
+      case 'SpDrained':
+        entries.push({ text: `${nameOf(event.pieceId)} SP −${event.amount}`, owner: ownerOf(event.pieceId) });
+        break;
+      case 'StatusApplied':
+        entries.push({ text: `${nameOf(event.pieceId)} 회피 −${event.value} (${event.turns}턴)`, owner: ownerOf(event.pieceId) });
+        break;
+      case 'PieceDown':
+        entries.push({ text: `${nameOf(event.pieceId)} 전사`, owner: ownerOf(event.pieceId), highlight: true });
+        break;
+      case 'SuddenDeath':
+        entries.push({ text: `서든데스 — 전 기물 HP −${event.damage}`, highlight: true });
+        break;
+      case 'TurnStarted':
+        entries.push({ text: `── ${event.round}라운드 · 플레이어 ${event.player} (행동 ${event.ap})`, highlight: true });
+        break;
+      case 'MatchEnded':
+        entries.push({ text: event.winner === 'draw' ? '무승부' : `플레이어 ${event.winner} 승리`, highlight: true });
+        break;
+      default:
+        break;
+    }
+  }
+  return entries;
+}

@@ -1,0 +1,23 @@
+{
+  "name": "tessera",
+  "private": true,
+  "version": "0.1.0",
+  "description": "턴제 멀티 덱빌딩 그리드 전술 게임",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "pnpm --filter @tessera/web dev",
+    "build": "pnpm --filter @tessera/web build",
+    "preview": "pnpm --filter @tessera/web preview",
+    "test": "pnpm --filter @tessera/rules test",
+    "sim": "pnpm --filter @tessera/rules sim",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
