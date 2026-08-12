@@ -37,9 +37,18 @@ export class BoardScene extends Phaser.Scene {
   private hintLayer!: Phaser.GameObjects.Graphics;
   private fxLayer!: Phaser.GameObjects.Graphics;
   private lastState: MatchState | null = null;
+  /** 드래그 중인 기물 — sync()가 드래그 도중 위치를 되돌리지 않게 막는 용도. */
+  private draggingId: string | null = null;
 
   /** 컨트롤러가 주입한다. 씬은 클릭 좌표만 넘기고 판단은 하지 않는다. */
   onCellClick: (cell: Coord) => void = () => {};
+
+  /**
+   * 배치 단계에서 기물을 드래그해 놓았을 때 호출된다. 보드 밖에 놓거나 규칙에
+   * 어긋나면 cell이 null이거나 컨트롤러가 반영을 거부할 수 있는데, 어느 쪽이든
+   * 다음 sync()가 상태 기준 위치로 되돌려 놓는다 (신규 배치 UI).
+   */
+  onPieceDrop: (pieceId: string, cell: Coord | null) => void = () => {};
 
   /**
    * create()가 끝났음을 알린다.
@@ -63,6 +72,29 @@ export class BoardScene extends Phaser.Scene {
       const cell = toCell(pointer.worldX, pointer.worldY);
       if (cell) this.onCellClick(cell);
     });
+
+    this.input.on(
+      'dragstart',
+      (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Container) => {
+        this.draggingId = gameObject.getData('pieceId') as string;
+        gameObject.setDepth(50);
+      },
+    );
+    this.input.on(
+      'drag',
+      (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Container, dragX: number, dragY: number) => {
+        gameObject.setPosition(dragX, dragY);
+      },
+    );
+    this.input.on(
+      'dragend',
+      (pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Container) => {
+        const pieceId = gameObject.getData('pieceId') as string;
+        gameObject.setDepth(10);
+        this.draggingId = null;
+        this.onPieceDrop(pieceId, toCell(pointer.worldX, pointer.worldY));
+      },
+    );
 
     this.onReady?.();
   }
@@ -102,8 +134,11 @@ export class BoardScene extends Phaser.Scene {
     }
   }
 
-  /** 상태를 화면에 반영한다. 없던 기물은 만들고, 죽은 기물은 치운다. */
-  sync(state: MatchState, viewer?: PlayerId): void {
+  /**
+   * 상태를 화면에 반영한다. 없던 기물은 만들고, 죽은 기물은 치운다.
+   * draggableIds에 들어 있는 기물은 배치 단계에서 드래그로 재배치할 수 있게 된다 (신규 배치 UI).
+   */
+  sync(state: MatchState, viewer?: PlayerId, draggableIds?: Set<string>): void {
     this.lastState = state;
     this.renderTerrain(state);
     const seen = new Set<string>();
@@ -113,8 +148,11 @@ export class BoardScene extends Phaser.Scene {
       seen.add(piece.id);
       const view = this.views.get(piece.id) ?? this.createView(piece);
       this.updateView(view, piece, viewer);
-      const { px, py } = toPixel(piece.pos.x, piece.pos.y);
-      view.container.setPosition(px, py);
+      this.setDraggable(view, piece.id, draggableIds?.has(piece.id) ?? false);
+      if (this.draggingId !== piece.id) {
+        const { px, py } = toPixel(piece.pos.x, piece.pos.y);
+        view.container.setPosition(px, py);
+      }
     }
 
     for (const [id, view] of this.views) {
@@ -122,6 +160,21 @@ export class BoardScene extends Phaser.Scene {
         view.container.destroy();
         this.views.delete(id);
       }
+    }
+  }
+
+  /** 배치 단계에서만 쓰는 드래그 가능 여부 토글 — 전투가 시작되면 다시 꺼야 한다. */
+  private setDraggable(view: PieceView, pieceId: string, draggable: boolean): void {
+    const container = view.container;
+    container.setData('pieceId', pieceId);
+    if (draggable) {
+      if (!container.input) {
+        container.setInteractive(new Phaser.Geom.Circle(0, 0, BODY_RADIUS), Phaser.Geom.Circle.Contains);
+        this.input.setDraggable(container);
+      }
+    } else if (container.input) {
+      this.input.setDraggable(container, false);
+      container.disableInteractive();
     }
   }
 

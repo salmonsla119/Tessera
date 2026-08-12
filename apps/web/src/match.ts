@@ -83,6 +83,8 @@ export class MatchController {
 
   /** 배치 단계에서 아직 제출하지 않은 임시 배치. */
   private placements = new Map<string, Coord>();
+  /** 배치 단계에서 목록/보드 클릭으로 "손에 든" 기물 — 다음 보드 클릭이 이 기물을 놓는다. */
+  private deploySelectedId: string | null = null;
   private selectedId: string | null = null;
   /** 마지막으로 클릭해 정보를 확인한 기물 — 아군·적군 상관없이 바뀐다. */
   private inspectId: string | null = null;
@@ -120,12 +122,14 @@ export class MatchController {
     this.game = created.game;
     this.scene = created.scene;
     this.scene.onCellClick = (cell) => void this.handleCellClick(cell);
+    this.scene.onPieceDrop = (pieceId, cell) => this.handleDeployDrop(pieceId, cell);
 
     this.hud = new Hud(this.hudEl, {
       onSelectSkill: (id) => this.selectSkill(id),
       onFocus: () => void this.submit({ type: 'focus', player: this.viewer, pieceId: this.selectedId! }),
       onEndTurn: () => void this.submit({ type: 'endTurn', player: this.viewer }),
       onSubmitDeploy: () => void this.submitDeploy(),
+      onSelectDeployPiece: (pieceId) => this.selectDeployPiece(pieceId),
       onExit: () => void this.confirmExit(),
     });
 
@@ -139,6 +143,7 @@ export class MatchController {
       });
     }
 
+    if (this.state.phase === 'deploying') this.initDeploySelection();
     this.refresh();
     await this.runAutoTurnsIfNeeded();
 
@@ -168,11 +173,14 @@ export class MatchController {
     return this.state.pieces.find((p) => p.id === this.selectedId) ?? null;
   }
 
-  /** 정보 카드에 보여 줄 기물. 명시적으로 확인한 게 없으면 내가 조작 중인 기물로 되돌아간다. */
+  /** 정보 카드에 보여 줄 기물. 명시적으로 확인한 게 없으면 내가 조작/배치 중인 기물로 되돌아간다. */
   private get viewed(): PieceState | null {
     if (this.inspectId) {
       const found = this.state.pieces.find((p) => p.id === this.inspectId);
       if (found) return found;
+    }
+    if (this.state.phase === 'deploying') {
+      return this.state.pieces.find((p) => p.id === this.deploySelectedId) ?? null;
     }
     return this.selected;
   }
@@ -187,6 +195,19 @@ export class MatchController {
     return this.ownPieces(this.viewer).find((p) => !this.placements.has(p.id)) ?? null;
   }
 
+  /** 배치 단계에 들어서거나 자리를 넘겨받을 때 "손에 든" 기물을 첫 미배치 기물로 되돌린다. */
+  private initDeploySelection(): void {
+    this.deploySelectedId = this.nextUnplaced()?.id ?? null;
+    this.inspectId = this.deploySelectedId;
+  }
+
+  /** 목록 또는 보드에서 기물을 골라 "손에 든" 상태로 만들고 정보 카드에 띄운다. */
+  private selectDeployPiece(pieceId: string): void {
+    this.deploySelectedId = pieceId;
+    this.inspectId = pieceId;
+    this.refresh();
+  }
+
   /** 임시 배치를 반영한 표시용 상태. 실제 상태는 제출 전까지 바뀌지 않는다. */
   private deployPreviewState(): MatchState {
     const masked = maskState(this.state, this.viewer);
@@ -199,21 +220,43 @@ export class MatchController {
     };
   }
 
+  /**
+   * 파란 구역 클릭 — 그 칸에 이미 다른 기물이 있으면 그 기물을 "손에 들고"(선택) 정보를 보여 주고,
+   * 비어 있으면 지금 손에 든 기물을 그 칸에 놓는다. 미배치 기물을 처음 놓을 때만 다음 미배치
+   * 기물로 자동으로 넘어간다 — 이미 놓인 기물을 옮기는 중이면 계속 그 기물을 손에 쥔 채로 둔다.
+   */
   private handleDeployClick(cell: Coord): void {
     const zone = deployZoneCells(this.viewer);
     if (!zone.some((c) => c.x === cell.x && c.y === cell.y)) return;
 
-    for (const [pieceId, pos] of this.placements) {
-      if (pos.x === cell.x && pos.y === cell.y) {
-        this.placements.delete(pieceId);
-        this.refresh();
-        return;
-      }
+    const occupant = [...this.placements.entries()].find(([, pos]) => pos.x === cell.x && pos.y === cell.y);
+    if (occupant) {
+      this.selectDeployPiece(occupant[0]);
+      return;
     }
 
-    const next = this.nextUnplaced();
-    if (!next) return;
-    this.placements.set(next.id, cell);
+    if (!this.deploySelectedId) return;
+    const wasUnplaced = !this.placements.has(this.deploySelectedId);
+    this.placements.set(this.deploySelectedId, cell);
+    if (wasUnplaced) this.deploySelectedId = this.nextUnplaced()?.id ?? null;
+    this.inspectId = this.deploySelectedId ?? this.inspectId;
+    this.refresh();
+  }
+
+  /** 보드 위에서 기물을 드래그해 놓았을 때 — 유효하지 않으면 자리를 바꾸지 않고 되돌린다. */
+  private handleDeployDrop(pieceId: string, cell: Coord | null): void {
+    if (cell) {
+      const zone = deployZoneCells(this.viewer);
+      const inZone = zone.some((c) => c.x === cell.x && c.y === cell.y);
+      const occupiedByOther = [...this.placements.entries()].some(
+        ([id, pos]) => id !== pieceId && pos.x === cell.x && pos.y === cell.y,
+      );
+      if (inZone && !occupiedByOther) {
+        this.placements.set(pieceId, cell);
+        this.deploySelectedId = pieceId;
+        this.inspectId = pieceId;
+      }
+    }
     this.refresh();
   }
 
@@ -229,8 +272,11 @@ export class MatchController {
     this.ingestEvents(view.events, this.state);
     this.state = view.state;
     this.placements.clear();
+    this.deploySelectedId = null;
+    this.inspectId = null;
 
     if (this.state.phase === 'deploying') {
+      this.initDeploySelection();
       if (this.fixedViewer) {
         // 고정 시점(AI·온라인)에서는 자리 교대가 없다 — 상대가 배치를 마칠 때까지 기다린다.
         this.pushLog('상대 배치를 기다리는 중입니다', undefined, true);
@@ -441,8 +487,10 @@ export class MatchController {
     if (this.destroyed) return;
     const deploying = this.state.phase === 'deploying';
     const viewState = deploying ? this.deployPreviewState() : this.state;
+    // 배치 단계에서는 이미 놓은 내 기물 전부를 드래그로 재배치할 수 있게 한다.
+    const draggableIds = deploying ? new Set(this.placements.keys()) : undefined;
 
-    this.scene.sync(viewState, this.viewer);
+    this.scene.sync(viewState, this.viewer, draggableIds);
     this.scene.setHighlights(this.computeHighlights(viewState));
     this.hud.render(this.buildHudModel());
   }
@@ -521,7 +569,8 @@ export class MatchController {
 
   private computeHighlights(viewState: MatchState) {
     if (this.state.phase === 'deploying') {
-      return { deploy: deployZoneCells(this.viewer) };
+      const selectedCoord = this.deploySelectedId ? (this.placements.get(this.deploySelectedId) ?? null) : null;
+      return { deploy: deployZoneCells(this.viewer), selected: selectedCoord };
     }
 
     const piece = this.selected;
@@ -566,6 +615,15 @@ export class MatchController {
     }
 
     const placed = this.placements.size;
+    const deployRoster: HudModel['deployRoster'] =
+      this.state.phase === 'deploying'
+        ? this.ownPieces(viewer).map((p) => ({
+            id: p.id,
+            label: `${baseName(p.baseId)} · ${skillName(p.skillId)}`,
+            placed: this.placements.has(p.id),
+            selected: p.id === this.deploySelectedId,
+          }))
+        : [];
 
     return {
       phase: this.state.phase,
@@ -594,6 +652,7 @@ export class MatchController {
           actingPiece.sp < actingPiece.maxSp,
       ),
       deployRemaining: this.ownPieces(viewer).length - placed,
+      deployRoster,
       preview,
       log: this.log,
     };

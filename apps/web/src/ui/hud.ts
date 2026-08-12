@@ -9,6 +9,14 @@ export interface LogEntry {
   highlight?: boolean;
 }
 
+/** 배치 화면 옆 목록의 한 줄. */
+export interface DeployRosterItem {
+  id: string;
+  label: string;
+  placed: boolean;
+  selected: boolean;
+}
+
 export interface HudModel {
   phase: 'deploying' | 'battle' | 'finished';
   viewer: PlayerId;
@@ -35,6 +43,8 @@ export interface HudModel {
   lockedSkill: Skill | null;
   canFocus: boolean;
   deployRemaining: number;
+  /** 배치 화면 옆에 띄울 내 기물 목록 — 배치 단계가 아니면 빈 배열. */
+  deployRoster: DeployRosterItem[];
   preview: { targetName: string; range: DamageRange; distance: number; isHeal: boolean } | null;
   log: LogEntry[];
 }
@@ -44,6 +54,7 @@ export interface HudHandlers {
   onFocus: () => void;
   onEndTurn: () => void;
   onSubmitDeploy: () => void;
+  onSelectDeployPiece: (pieceId: string) => void;
   onExit: () => void;
 }
 
@@ -57,6 +68,7 @@ export class Hud {
   ) {
     const signal = this.listeners.signal;
     delegate(root, 'button[data-skill]', (b) => handlers.onSelectSkill(b.dataset.skill!), signal);
+    delegate(root, '[data-deploy-piece]', (b) => handlers.onSelectDeployPiece(b.dataset.deployPiece!), signal);
     delegate(
       root,
       'button[data-act]',
@@ -119,13 +131,23 @@ export class Hud {
   }
 
   private deployBlock(model: HudModel): string {
+    const items = model.deployRoster
+      .map(
+        (item) => `<div class="roster-item ${item.selected ? 'selected' : ''}" data-deploy-piece="${esc(item.id)}">
+          <span>${esc(item.label)}</span>
+          <span class="tag ${item.placed ? '' : 'muted'}">${item.placed ? '배치됨' : '미배치'}</span>
+        </div>`,
+      )
+      .join('');
+
     return `<div class="hud-block">
       <h3 style="font-size:14px">기물 배치</h3>
       <p class="muted" style="margin:6px 0 12px;font-size:13px">
-        파란 구역 안을 클릭해 기물을 놓습니다. 놓인 기물을 다시 클릭하면 회수합니다.
-        상대 배치는 양측이 제출을 마칠 때까지 보이지 않습니다.
+        목록에서 기물을 고르고 파란 구역을 클릭해 놓습니다. 이미 놓은 기물은 목록에서 다시
+        고르거나 판 위에서 직접 드래그해 위치를 바꿀 수 있습니다.
       </p>
-      <div class="row" style="justify-content:space-between">
+      <div class="roster">${items}</div>
+      <div class="row" style="justify-content:space-between;margin-top:12px">
         <span class="muted">남은 기물 <strong class="mono">${model.deployRemaining}</strong></span>
         <button data-act="submit-deploy" class="primary" ${model.deployRemaining > 0 ? 'disabled' : ''}>배치 제출</button>
       </div>
