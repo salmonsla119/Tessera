@@ -15,7 +15,7 @@ class_name = "MatchQueue"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["MatchQueue"]
+new_sqlite_classes = ["MatchQueue"]
 
 [triggers]
 # 24시간 턴 제한시간 초과 매치를 정리한다 (GDD §8.4, PLAN §8.4).
