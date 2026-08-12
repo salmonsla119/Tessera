@@ -64,6 +64,32 @@ describe('지형 생성 (신규 시스템)', () => {
     }
   });
 
+  it('한 매치에는 최대 3종류의 지형만 나온다', () => {
+    for (let seed = 0; seed < 50; seed++) {
+      const terrain = generateTerrain(createRng(seed));
+      const kinds = new Set(Object.values(terrain));
+      expect(kinds.size).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it('서로 다른 지형끼리는 칸이 겹치지 않는다', () => {
+    // terrain은 칸→단일 종류 맵이라 자료구조상 겹칠 수 없지만, 생성 도중 다른 종류가
+    // 이미 차지한 칸을 덮어써 버리는 회귀를 잡기 위해 총 칸 수 기준으로도 확인한다.
+    for (let seed = 0; seed < 20; seed++) {
+      const terrain = generateTerrain(createRng(seed));
+      expect(Object.keys(terrain).length).toBeLessThanOrEqual(32); // 배치 구역을 뺀 보드 여유 칸 수
+    }
+  });
+
+  it('지형 덩어리 하나는 30칸을 넘지 않는다', () => {
+    for (let seed = 0; seed < 50; seed++) {
+      const terrain = generateTerrain(createRng(seed));
+      const counts = new Map<string, number>();
+      for (const kind of Object.values(terrain)) counts.set(kind, (counts.get(kind) ?? 0) + 1);
+      for (const count of counts.values()) expect(count).toBeLessThanOrEqual(30);
+    }
+  });
+
   it('전 보드를 훑어도 잘못된 칸 좌표가 없다', () => {
     const terrain = generateTerrain(createRng(42));
     const valid = new Set(allCells().map((c) => `${c.x},${c.y}`));

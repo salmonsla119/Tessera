@@ -5,8 +5,11 @@ import { cellSet, deck, pieceOf, place, startedMatch } from './helpers';
 const DECK_A = deck('A', ['guard', 'cleave'], ['lancer', 'cleave'], ['rider', 'cleave'], ['acolyte', 'cleave'], ['warlord', 'cleave']);
 const DECK_B = deck('B', ['guard', 'cleave'], ['guard', 'cleave']);
 
+// 순수 이동 패턴만 확인하는 테스트라 지형은 끈다 — 지형 자체는 terrain.test.ts에서 별도로 검증한다.
+// (더 커진 지형 덩어리(13~30칸, packages/data/src/constants.ts)가 기물의 시작 칸을 덮으면
+// 이동 범위가 의도치 않게 줄어들어 여기 있는 순수 패턴 기대값이 깨진다.)
 function board(layout: Record<string, { x: number; y: number } | null>) {
-  return place(startedMatch(DECK_A, DECK_B), layout);
+  return place({ ...startedMatch(DECK_A, DECK_B), terrain: {} }, layout);
 }
 
 describe('이동 (GDD §5)', () => {

@@ -55,8 +55,10 @@ export const SCORCHED_BURN_VALUE = 2;
 export const SCORCHED_BURN_TURNS = 2;
 
 /** 지형 생성 — 지역처럼 뭉쳐서 분포하도록 씨앗에서 무작위로 번진다. */
-export const TERRAIN_BLOB_MIN_SIZE = 4;
-export const TERRAIN_BLOB_MAX_SIZE = 7;
+export const TERRAIN_BLOB_MIN_SIZE = 13;
+export const TERRAIN_BLOB_MAX_SIZE = 30;
+/** 한 매치에 등장하는 지형 종류 수 — 4종 중 이만큼만 무작위로 골라 등장시킨다. */
+export const TERRAIN_MAX_KINDS_PER_MATCH = 3;
 /** 배치 구역이 곧장 지형으로 뒤덮이지 않도록 씨앗은 중앙 대역(y 2~5)에서만 뽑는다. */
 export const TERRAIN_SEED_Y_MIN = 2;
 export const TERRAIN_SEED_Y_MAX = 5;
