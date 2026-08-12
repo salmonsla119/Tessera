@@ -21,7 +21,10 @@ export interface HudModel {
   aliveA: number;
   aliveB: number;
   suddenDeath: boolean;
+  /** 정보 카드에 보여 줄 기물 — 아군·적군 상관없이 마지막으로 클릭한 쪽. */
   selected: PieceState | null;
+  /** selected가 내 기물인지 — 적 기물은 정보만 보여주고 조작 버튼은 숨긴다. */
+  isMine: boolean;
   activeSkillId: string | null;
   usableSkills: Skill[];
   /** SP 부족으로 잠긴 편성 스킬 — 잠금 상태를 보여 주려고 따로 받는다. */
@@ -170,19 +173,15 @@ export class Hud {
 
     return `<div class="hud-block">
       <div class="row" style="justify-content:space-between">
-        <strong>${esc(baseName(piece.baseId))}</strong>
-        <span class="tag">${esc(base.moveLabel)}</span>
+        <strong>${esc(baseName(piece.baseId))} <span class="who ${piece.owner}" style="font-size:12px">P${piece.owner}</span></strong>
+        <span class="tag">${model.isMine ? esc(base.moveLabel) : '상대 기물'}</span>
       </div>
 
       <div style="margin-top:10px">
-        <div class="row" style="justify-content:space-between;font-size:12px">
-          <span class="muted">HP</span><span class="mono">${piece.hp} / ${piece.maxHp}</span>
-        </div>
-        <div class="meter hp"><i style="width:${hpPercent}%"></i></div>
-        <div class="row" style="justify-content:space-between;font-size:12px">
-          <span class="muted">SP</span><span class="mono">${piece.sp} / ${piece.maxSp}</span>
-        </div>
-        <div class="meter sp"><i style="width:${spPercent}%"></i></div>
+        <div class="muted" style="font-size:11px;margin-bottom:2px">HP</div>
+        <div class="meter hp"><i style="width:${hpPercent}%"></i><span class="meter-label">${piece.hp} / ${piece.maxHp}</span></div>
+        <div class="muted" style="font-size:11px;margin-bottom:2px">SP</div>
+        <div class="meter sp"><i style="width:${spPercent}%"></i><span class="meter-label">${piece.sp} / ${piece.maxSp}</span></div>
       </div>
 
       <div class="stat-grid">
@@ -200,7 +199,7 @@ export class Hud {
           : ''
       }
 
-      ${model.phase === 'battle' ? `<div class="skill-buttons">${skillButtons}${locked}</div>${preview}` : ''}
+      ${model.phase === 'battle' && model.isMine ? `<div class="skill-buttons">${skillButtons}${locked}</div>${preview}` : ''}
     </div>`;
   }
 

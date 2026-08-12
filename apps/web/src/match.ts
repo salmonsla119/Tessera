@@ -80,6 +80,8 @@ export class MatchController {
   /** 배치 단계에서 아직 제출하지 않은 임시 배치. */
   private placements = new Map<string, Coord>();
   private selectedId: string | null = null;
+  /** 마지막으로 클릭해 정보를 확인한 기물 — 아군·적군 상관없이 바뀐다. */
+  private inspectId: string | null = null;
   private activeSkillId: string | null = null;
   /** 예상 데미지를 먼저 보여 주고, 같은 대상을 한 번 더 눌러야 확정된다 (GDD §3.1). */
   private pendingTargetId: string | null = null;
@@ -160,6 +162,15 @@ export class MatchController {
 
   private get selected(): PieceState | null {
     return this.state.pieces.find((p) => p.id === this.selectedId) ?? null;
+  }
+
+  /** 정보 카드에 보여 줄 기물. 명시적으로 확인한 게 없으면 내가 조작 중인 기물로 되돌아간다. */
+  private get viewed(): PieceState | null {
+    if (this.inspectId) {
+      const found = this.state.pieces.find((p) => p.id === this.inspectId);
+      if (found) return found;
+    }
+    return this.selected;
   }
 
   // ---------- 배치 ----------
@@ -261,13 +272,19 @@ export class MatchController {
       return;
     }
 
-    // 고정 시점 모드에서는 상대 턴에 내 화면으로 조작하는 것을 막는다 — 서버도 거부하지만
-    // 여기서 막아야 "왜 안 되지" 왕복이 안 생긴다.
-    if (this.fixedViewer && this.state.turnOwner !== this.fixedViewer) return;
-
     const occupant = this.state.pieces.find(
       (p) => p.alive && p.pos !== null && p.pos.x === cell.x && p.pos.y === cell.y,
     );
+
+    // 정보 확인은 언제든 할 수 있다 — 상대 턴이어도, 아직 공격 대상을 정하지 않았어도 볼 수 있다.
+    if (occupant) this.inspectId = occupant.id;
+
+    // 고정 시점 모드에서는 상대 턴에 내 화면으로 실제 행동을 넣는 것만 막는다 — 서버도 거부하지만
+    // 여기서 막아야 "왜 안 되지" 왕복이 안 생긴다. 정보 카드는 위에서 이미 갱신했으니 그대로 보여 준다.
+    if (this.fixedViewer && this.state.turnOwner !== this.fixedViewer) {
+      this.refresh();
+      return;
+    }
 
     if (occupant && occupant.owner === this.viewer) {
       this.selectedId = occupant.id;
@@ -278,12 +295,18 @@ export class MatchController {
     }
 
     const attacker = this.selected;
-    if (!attacker) return;
+    if (!attacker) {
+      this.refresh();
+      return;
+    }
 
     if (occupant && this.activeSkillId) {
       const skill = requireSkill(this.activeSkillId);
       const inRange = validTargets(this.state, attacker, skill).some((t) => t.id === occupant.id);
-      if (!inRange) return;
+      if (!inRange) {
+        this.refresh();
+        return;
+      }
 
       // 첫 클릭은 예상 데미지 표시, 같은 대상 두 번째 클릭이 확정.
       if (this.pendingTargetId !== occupant.id) {
@@ -304,7 +327,10 @@ export class MatchController {
 
     if (!occupant && movableCells(this.state, attacker).some((c) => c.x === cell.x && c.y === cell.y)) {
       await this.submit({ type: 'move', player: this.viewer, pieceId: attacker.id, to: cell });
+      return;
     }
+
+    this.refresh();
   }
 
   private async submit(action: Action): Promise<void> {
@@ -323,6 +349,7 @@ export class MatchController {
 
       if (this.state.phase === 'finished') {
         this.selectedId = null;
+        this.inspectId = null;
         this.refresh();
         await this.showResult();
         return;
@@ -331,6 +358,7 @@ export class MatchController {
       if (this.state.turnOwner !== previousTurnOwner) {
         this.selectedId = null;
         this.activeSkillId = null;
+        this.inspectId = null;
         this.refresh();
         if (this.fixedViewer) {
           await this.runAutoTurnsIfNeeded();
@@ -466,6 +494,7 @@ export class MatchController {
 
     this.state = view.state;
     this.selectedId = null;
+    this.inspectId = null;
     this.activeSkillId = null;
     this.pendingTargetId = null;
     if (phaseChanged && view.state.phase === 'battle') this.pushLog('전투가 시작되었습니다', undefined, true);
@@ -503,20 +532,21 @@ export class MatchController {
   }
 
   private buildHudModel(): HudModel {
-    const piece = this.selected;
+    const actingPiece = this.selected;
+    const viewedPiece = this.viewed;
     const viewer = this.viewer;
-    const skills: Skill[] = piece ? usableSkills(piece) : [];
-    const locked = piece && isSkillLocked(piece) ? requireSkill(piece.skillId) : null;
+    const skills: Skill[] = actingPiece ? usableSkills(actingPiece) : [];
+    const locked = actingPiece && isSkillLocked(actingPiece) ? requireSkill(actingPiece.skillId) : null;
 
     let preview: HudModel['preview'] = null;
-    if (piece && piece.pos && this.pendingTargetId && this.activeSkillId) {
+    if (actingPiece && actingPiece.pos && this.pendingTargetId && this.activeSkillId) {
       const target = this.state.pieces.find((p) => p.id === this.pendingTargetId);
       if (target?.pos) {
-        const distance = chebyshev(piece.pos, target.pos);
+        const distance = chebyshev(actingPiece.pos, target.pos);
         preview = {
           targetName: `${baseName(target.baseId)}(${skillName(target.skillId)})`,
           distance,
-          range: previewDamage(piece, requireSkill(this.activeSkillId), distance),
+          range: previewDamage(actingPiece, requireSkill(this.activeSkillId), distance),
         };
       }
     }
@@ -534,16 +564,18 @@ export class MatchController {
       aliveA: this.state.pieces.filter((p) => p.owner === 'A' && p.alive).length,
       aliveB: this.state.pieces.filter((p) => p.owner === 'B' && p.alive).length,
       suddenDeath: this.state.suddenDeath,
-      selected: piece,
+      selected: viewedPiece,
+      isMine: viewedPiece !== null && viewedPiece.owner === viewer,
       activeSkillId: this.activeSkillId,
       usableSkills: skills,
       lockedSkill: locked,
       canFocus: Boolean(
-        piece &&
+        actingPiece &&
+          viewedPiece?.id === actingPiece.id &&
           this.state.phase === 'battle' &&
           this.state.turnOwner === viewer &&
           this.state.ap[viewer] > 0 &&
-          piece.sp < piece.maxSp,
+          actingPiece.sp < actingPiece.maxSp,
       ),
       deployRemaining: this.ownPieces(viewer).length - placed,
       preview,

@@ -174,10 +174,10 @@ export class BoardScene extends Phaser.Scene {
           await this.animateMove(event.pieceId, event.to);
           break;
         case 'SkillUsed':
-          await this.animateStrike(event.from, event.to);
+          await this.animateStrike(event.pieceId, event.from, event.to);
           break;
         case 'Evaded':
-          await this.floatText(event.pieceId, '회피!', '#8d97ab');
+          await this.animateEvade(event.pieceId);
           break;
         case 'Damaged':
           await this.animateDamage(event.pieceId, event.amount, event.hp);
@@ -224,16 +224,93 @@ export class BoardScene extends Phaser.Scene {
     });
   }
 
-  private async animateStrike(from: Coord, to: Coord): Promise<void> {
+  /** 인접 공격은 공격자가 대상 쪽으로 짧게 파고들었다 돌아온다. 원거리는 탄환이 날아간다. */
+  private async animateStrike(attackerId: string, from: Coord, to: Coord): Promise<void> {
     const a = toPixel(from.x, from.y);
     const b = toPixel(to.x, to.y);
+    const cellDistance = Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y));
 
+    if (cellDistance <= 1) {
+      await this.lunge(attackerId, a, b);
+    } else {
+      await this.projectile(a, b);
+    }
+  }
+
+  private async lunge(attackerId: string, a: { px: number; py: number }, b: { px: number; py: number }): Promise<void> {
+    const view = this.views.get(attackerId);
+    if (!view) {
+      await this.slash(a, b);
+      return;
+    }
+
+    const lungeX = a.px + (b.px - a.px) * 0.32;
+    const lungeY = a.py + (b.py - a.py) * 0.32;
+
+    await new Promise<void>((resolve) => {
+      this.tweens.add({
+        targets: view.container,
+        x: lungeX,
+        y: lungeY,
+        duration: 90,
+        ease: 'Quad.easeOut',
+        onComplete: () => resolve(),
+      });
+    });
+
+    this.slash(a, b, 90);
+
+    await new Promise<void>((resolve) => {
+      this.tweens.add({
+        targets: view.container,
+        x: a.px,
+        y: a.py,
+        duration: 110,
+        ease: 'Quad.easeIn',
+        onComplete: () => resolve(),
+      });
+    });
+  }
+
+  private async slash(a: { px: number; py: number }, b: { px: number; py: number }, duration = 110): Promise<void> {
     this.fxLayer.clear();
     this.fxLayer.lineStyle(3, 0xffd479, 0.95);
     this.fxLayer.lineBetween(a.px, a.py, b.px, b.py);
-
-    await this.wait(140);
+    await this.wait(duration);
     this.fxLayer.clear();
+  }
+
+  private async projectile(a: { px: number; py: number }, b: { px: number; py: number }): Promise<void> {
+    const dist = Phaser.Math.Distance.Between(a.px, a.py, b.px, b.py);
+    const duration = Math.min(260, Math.max(120, dist * 0.55));
+    const dot = this.add.circle(a.px, a.py, 5, 0xffd479).setDepth(35);
+
+    await new Promise<void>((resolve) => {
+      this.tweens.add({
+        targets: dot,
+        x: b.px,
+        y: b.py,
+        duration,
+        ease: 'Linear',
+        onComplete: () => {
+          dot.destroy();
+          resolve();
+        },
+      });
+    });
+  }
+
+  /** 명중 시 대상 위에 붉은 충격파를 한 번 퍼뜨린다. 연출용이라 결과를 기다리지 않는다. */
+  private spawnImpactRing(x: number, y: number): void {
+    const ring = this.add.circle(x, y, BODY_RADIUS * 0.6, 0xff6b6b, 0).setStrokeStyle(3, 0xff6b6b, 0.9).setDepth(32);
+    this.tweens.add({
+      targets: ring,
+      radius: BODY_RADIUS + 16,
+      alpha: 0,
+      duration: 260,
+      ease: 'Cubic.easeOut',
+      onComplete: () => ring.destroy(),
+    });
   }
 
   private async animateDamage(pieceId: string, amount: number, hp: number): Promise<void> {
@@ -248,8 +325,29 @@ export class BoardScene extends Phaser.Scene {
       duration: 180,
       ease: 'Back.easeOut',
     });
+    this.spawnImpactRing(view.container.x, view.container.y);
+    if (amount >= 6) this.cameras.main.shake(120, 0.004);
 
     await this.floatText(pieceId, `−${amount}`, '#ff8f8f');
+  }
+
+  /** 회피는 살짝 옆으로 비켜섰다 돌아오는 것으로 표현한다. */
+  private async animateEvade(pieceId: string): Promise<void> {
+    const view = this.views.get(pieceId);
+    if (view) {
+      const dx = (Math.random() > 0.5 ? 1 : -1) * 10;
+      await new Promise<void>((resolve) => {
+        this.tweens.add({
+          targets: view.container,
+          x: view.container.x + dx,
+          duration: 70,
+          yoyo: true,
+          ease: 'Quad.easeOut',
+          onComplete: () => resolve(),
+        });
+      });
+    }
+    await this.floatText(pieceId, '회피!', '#8d97ab');
   }
 
   private maxHpOf(pieceId: string): number {

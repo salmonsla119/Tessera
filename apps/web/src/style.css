@@ -441,16 +441,31 @@ table.data tr.selected {
 }
 
 .meter {
-  height: 7px;
+  position: relative;
+  height: 17px;
   border-radius: 4px;
   background: #0c0f16;
   overflow: hidden;
-  margin: 4px 0 8px;
+  margin: 0 0 8px;
 }
 
 .meter > i {
   display: block;
   height: 100%;
+}
+
+.meter-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 650;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
 }
 
 .meter.hp > i {
