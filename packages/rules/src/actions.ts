@@ -1,8 +1,8 @@
 import { AP_COST_ATTACK, AP_COST_FOCUS, AP_COST_MOVE, requireSkill } from '@tessera/data';
 import { chebyshev, coordKey, isDeployZone } from './board';
 import { movableCells } from './movement';
-import { getPiece, livingPieces } from './state';
-import { targetableCells, usableSkills } from './targeting';
+import { getPiece, isFrozen, livingPieces } from './state';
+import { targetableCells, usableSkills, validTargets } from './targeting';
 import type { Action, MatchState, PlayerId } from './types';
 
 export interface Legality {
@@ -60,6 +60,7 @@ export function checkAction(state: MatchState, action: Action): Legality {
   switch (action.type) {
     case 'move': {
       if (state.ap[action.player] < AP_COST_MOVE) return no('행동력이 부족합니다');
+      if (isFrozen(piece)) return no('빙결 상태라 행동할 수 없습니다');
       const reachable = movableCells(state, piece);
       if (!reachable.some((c) => c.x === action.to.x && c.y === action.to.y)) {
         return no('이동할 수 없는 칸입니다');
@@ -69,6 +70,7 @@ export function checkAction(state: MatchState, action: Action): Legality {
 
     case 'attack': {
       if (state.ap[action.player] < AP_COST_ATTACK) return no('행동력이 부족합니다');
+      if (isFrozen(piece)) return no('빙결 상태라 행동할 수 없습니다');
       const skill = usableSkills(piece).find((s) => s.id === action.skillId);
       if (!skill) {
         // 편성 스킬 자체가 없는 게 아니라 SP가 모자란 경우를 구분해 준다.
@@ -79,17 +81,29 @@ export function checkAction(state: MatchState, action: Action): Legality {
       const target = getPiece(state, action.targetId);
       if (!target) return no(`알 수 없는 대상: ${action.targetId}`);
       if (!target.alive || target.pos === null) return no('이미 전사한 대상입니다');
-      if (target.owner === action.player) return no('아군은 공격할 수 없습니다');
-      const cells = targetableCells(state, piece.pos, skill);
-      const targetPos = target.pos;
-      if (!cells.some((c) => c.x === targetPos.x && c.y === targetPos.y)) {
-        return no('사거리 밖이거나 경로가 막혀 있습니다');
+
+      // damage 스킬은 적만, heal 스킬은 아군(자신 포함)만 대상이 된다 (신규 시스템).
+      const isAlly = target.owner === action.player;
+      if (skill.kind === 'heal') {
+        if (!isAlly) return no('치유 스킬은 아군만 대상으로 할 수 있습니다');
+      } else if (isAlly) {
+        return no('아군은 공격할 수 없습니다');
+      }
+
+      // 자힐은 사거리 형태와 무관하게 항상 가능하다 (validTargets와 동일한 규칙).
+      if (target.id !== piece.id) {
+        const cells = targetableCells(state, piece.pos, skill);
+        const targetPos = target.pos;
+        if (!cells.some((c) => c.x === targetPos.x && c.y === targetPos.y)) {
+          return no('사거리 밖이거나 경로가 막혀 있습니다');
+        }
       }
       return OK;
     }
 
     case 'focus': {
       if (state.ap[action.player] < AP_COST_FOCUS) return no('행동력이 부족합니다');
+      if (isFrozen(piece)) return no('빙결 상태라 행동할 수 없습니다');
       if (piece.sp >= piece.maxSp) return no('이미 SP가 최대입니다');
       return OK;
     }
@@ -110,6 +124,7 @@ export function legalActions(state: MatchState, player: PlayerId): Action[] {
 
   for (const piece of livingPieces(state, player)) {
     if (piece.pos === null) continue;
+    if (isFrozen(piece)) continue; // 빙결 중에는 아무 행동도 할 수 없다 (신규 시스템).
 
     if (ap >= AP_COST_MOVE) {
       for (const to of movableCells(state, piece)) {
@@ -119,19 +134,8 @@ export function legalActions(state: MatchState, player: PlayerId): Action[] {
 
     if (ap >= AP_COST_ATTACK) {
       for (const skill of usableSkills(piece)) {
-        for (const cell of targetableCells(state, piece.pos, skill)) {
-          const occupant = state.pieces.find(
-            (p) => p.alive && p.pos !== null && p.pos.x === cell.x && p.pos.y === cell.y,
-          );
-          if (occupant && occupant.owner !== player) {
-            actions.push({
-              type: 'attack',
-              player,
-              pieceId: piece.id,
-              skillId: skill.id,
-              targetId: occupant.id,
-            });
-          }
+        for (const target of validTargets(state, piece, skill)) {
+          actions.push({ type: 'attack', player, pieceId: piece.id, skillId: skill.id, targetId: target.id });
         }
       }
     }

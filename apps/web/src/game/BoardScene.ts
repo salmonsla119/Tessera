@@ -1,10 +1,12 @@
 import Phaser from 'phaser';
+import type { StatusKind } from '@tessera/data';
 import type { Coord, GameEvent, MatchState, PieceState, PlayerId } from '@tessera/rules';
-import { BOARD_PX, CELL, COLORS, PAD, ownerColor, pieceLabel, toCell, toPixel } from './theme';
+import { BOARD_PX, CELL, COLORS, PAD, STATUS_COLOR, TERRAIN_COLORS, ownerColor, pieceLabel, toCell, toPixel } from './theme';
 
 export interface Highlights {
   move?: Coord[];
   attack?: Coord[];
+  heal?: Coord[];
   deploy?: Coord[];
   selected?: Coord | null;
 }
@@ -14,6 +16,7 @@ interface PieceView {
   body: Phaser.GameObjects.Arc;
   hpFill: Phaser.GameObjects.Rectangle;
   spFill: Phaser.GameObjects.Rectangle;
+  statusBadges: Phaser.GameObjects.Arc[];
 }
 
 const BODY_RADIUS = 23;
@@ -29,6 +32,8 @@ export class BoardScene extends Phaser.Scene {
   static readonly KEY = 'board';
 
   private views = new Map<string, PieceView>();
+  private terrainLayer!: Phaser.GameObjects.Graphics;
+  private terrainDrawn = false;
   private hintLayer!: Phaser.GameObjects.Graphics;
   private fxLayer!: Phaser.GameObjects.Graphics;
   private lastState: MatchState | null = null;
@@ -50,6 +55,7 @@ export class BoardScene extends Phaser.Scene {
   // Phaser의 Scene 타입에는 create가 선언돼 있지 않아 override를 붙일 수 없다.
   create(): void {
     this.drawBoard();
+    this.terrainLayer = this.add.graphics().setDepth(0.5);
     this.hintLayer = this.add.graphics().setDepth(1);
     this.fxLayer = this.add.graphics().setDepth(30);
 
@@ -81,9 +87,25 @@ export class BoardScene extends Phaser.Scene {
     }
   }
 
+  /** 지형 타일을 색칠한다 — 매치 내내 바뀌지 않으므로 최초 한 번만 그린다 (신규 시스템). */
+  private renderTerrain(state: MatchState): void {
+    if (this.terrainDrawn) return;
+    this.terrainDrawn = true;
+
+    for (const [key, kind] of Object.entries(state.terrain)) {
+      const color = TERRAIN_COLORS[kind];
+      if (color === undefined) continue;
+      const [x, y] = key.split(',').map(Number) as [number, number];
+      const { px, py } = toPixel(x, y);
+      this.terrainLayer.fillStyle(color, 0.55);
+      this.terrainLayer.fillRect(px - CELL / 2, py - CELL / 2, CELL, CELL);
+    }
+  }
+
   /** 상태를 화면에 반영한다. 없던 기물은 만들고, 죽은 기물은 치운다. */
   sync(state: MatchState, viewer?: PlayerId): void {
     this.lastState = state;
+    this.renderTerrain(state);
     const seen = new Set<string>();
 
     for (const piece of state.pieces) {
@@ -120,7 +142,7 @@ export class BoardScene extends Phaser.Scene {
     const spFill = this.add.rectangle(-BAR_WIDTH / 2, BODY_RADIUS + 12, BAR_WIDTH, 3, COLORS.spBar).setOrigin(0, 0.5);
 
     const container = this.add.container(0, 0, [body, label, hpBg, hpFill, spBg, spFill]).setDepth(10);
-    const view: PieceView = { container, body, hpFill, spFill };
+    const view: PieceView = { container, body, hpFill, spFill, statusBadges: [] };
     this.views.set(piece.id, view);
     return view;
   }
@@ -130,6 +152,20 @@ export class BoardScene extends Phaser.Scene {
     view.body.setStrokeStyle(2.5, hidden ? COLORS.hidden : ownerColor(piece.owner));
     view.hpFill.width = BAR_WIDTH * Math.max(0, piece.hp / piece.maxHp);
     view.spFill.width = BAR_WIDTH * (piece.maxSp === 0 ? 0 : Math.max(0, piece.sp / piece.maxSp));
+    this.updateStatusBadges(view, piece);
+  }
+
+  /** 상태이상마다 몸통 위에 작은 색 점을 하나씩 띄운다 (신규 시스템). */
+  private updateStatusBadges(view: PieceView, piece: PieceState): void {
+    for (const badge of view.statusBadges) badge.destroy();
+    view.statusBadges = piece.statuses.map((status, i) => {
+      const x = -BODY_RADIUS + 6 + i * 11;
+      const y = -BODY_RADIUS - 8;
+      const color = Phaser.Display.Color.HexStringToColor(STATUS_COLOR[status.kind]).color;
+      const dot = this.add.circle(x, y, 4, color).setDepth(11);
+      view.container.add(dot);
+      return dot;
+    });
   }
 
   setHighlights(h: Highlights): void {
@@ -153,6 +189,12 @@ export class BoardScene extends Phaser.Scene {
     for (const cell of h.attack ?? []) {
       const { px, py } = toPixel(cell.x, cell.y);
       g.lineStyle(3, COLORS.attackHint, 0.9);
+      g.strokeRect(px - CELL / 2 + 2, py - CELL / 2 + 2, CELL - 4, CELL - 4);
+    }
+
+    for (const cell of h.heal ?? []) {
+      const { px, py } = toPixel(cell.x, cell.y);
+      g.lineStyle(3, COLORS.healHint, 0.9);
       g.strokeRect(px - CELL / 2 + 2, py - CELL / 2 + 2, CELL - 4, CELL - 4);
     }
 
@@ -182,6 +224,9 @@ export class BoardScene extends Phaser.Scene {
         case 'Damaged':
           await this.animateDamage(event.pieceId, event.amount, event.hp);
           break;
+        case 'Healed':
+          await this.animateHeal(event.pieceId, event.amount, event.hp);
+          break;
         case 'Focused':
           await this.floatText(event.pieceId, '집중 +3 SP', '#6ea8fe');
           break;
@@ -189,7 +234,7 @@ export class BoardScene extends Phaser.Scene {
           await this.floatText(event.pieceId, `SP −${event.amount}`, '#6ea8fe');
           break;
         case 'StatusApplied':
-          await this.floatText(event.pieceId, '회피 −10', '#c084fc');
+          await this.floatText(event.pieceId, statusFloatText(event.kind, event.value), STATUS_COLOR[event.kind]);
           break;
         case 'PieceDown':
           await this.animateDown(event.pieceId);
@@ -300,9 +345,9 @@ export class BoardScene extends Phaser.Scene {
     });
   }
 
-  /** 명중 시 대상 위에 붉은 충격파를 한 번 퍼뜨린다. 연출용이라 결과를 기다리지 않는다. */
-  private spawnImpactRing(x: number, y: number): void {
-    const ring = this.add.circle(x, y, BODY_RADIUS * 0.6, 0xff6b6b, 0).setStrokeStyle(3, 0xff6b6b, 0.9).setDepth(32);
+  /** 명중 시 대상 위에 색이 있는 충격파를 한 번 퍼뜨린다. 연출용이라 결과를 기다리지 않는다. */
+  private spawnRing(x: number, y: number, color: number): void {
+    const ring = this.add.circle(x, y, BODY_RADIUS * 0.6, color, 0).setStrokeStyle(3, color, 0.9).setDepth(32);
     this.tweens.add({
       targets: ring,
       radius: BODY_RADIUS + 16,
@@ -325,10 +370,22 @@ export class BoardScene extends Phaser.Scene {
       duration: 180,
       ease: 'Back.easeOut',
     });
-    this.spawnImpactRing(view.container.x, view.container.y);
+    this.spawnRing(view.container.x, view.container.y, 0xff6b6b);
     if (amount >= 6) this.cameras.main.shake(120, 0.004);
 
     await this.floatText(pieceId, `−${amount}`, '#ff8f8f');
+  }
+
+  /** 치유는 초록 링 + 위로 뜨는 "+N" 텍스트로 표현한다 (신규 시스템). */
+  private async animateHeal(pieceId: string, amount: number, hp: number): Promise<void> {
+    const view = this.views.get(pieceId);
+    if (!view) return;
+
+    view.hpFill.width = BAR_WIDTH * Math.max(0, hp / Math.max(1, this.maxHpOf(pieceId)));
+    this.spawnRing(view.container.x, view.container.y, 0x4ade80);
+
+    if (amount <= 0) return; // 이미 만피라 회복량이 0이면 굳이 텍스트를 띄우지 않는다.
+    await this.floatText(pieceId, `+${amount}`, '#4ade80');
   }
 
   /** 회피는 살짝 옆으로 비켜섰다 돌아오는 것으로 표현한다. */
@@ -416,5 +473,20 @@ export class BoardScene extends Phaser.Scene {
         },
       });
     });
+  }
+}
+
+function statusFloatText(kind: StatusKind, value: number): string {
+  switch (kind) {
+    case 'evaDown':
+      return `회피 −${value}`;
+    case 'burn':
+      return '화상!';
+    case 'bleed':
+      return '출혈!';
+    case 'freeze':
+      return '빙결!';
+    default:
+      return '';
   }
 }

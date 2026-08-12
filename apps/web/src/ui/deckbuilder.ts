@@ -10,6 +10,7 @@ import {
 } from '@tessera/data';
 import { accrueAp } from '@tessera/rules';
 import type { StoredDeck } from '../backend/types';
+import { describePassive } from '../game/theme';
 import { $, delegate, esc, html } from './dom';
 
 const SHAPE_LABEL: Record<string, string> = {
@@ -86,11 +87,12 @@ export function renderDeckBuilder(
   function renderBases(): void {
     html(
       basesEl,
-      `<thead><tr><th>이름</th><th>이동</th><th>HP</th><th>ATK</th><th>SP</th><th>EVA</th><th>SPD</th><th>C</th></tr></thead>
+      `<thead><tr><th>이름</th><th>이동</th><th>HP</th><th>ATK</th><th>SP</th><th>EVA</th><th>SPD</th><th>C</th><th>패시브</th></tr></thead>
        <tbody>${BASES.map(
          (b) => `<tr data-base="${b.id}" class="${b.id === selectedBase ? 'selected' : ''}">
             <td>${esc(b.name)}</td><td class="muted" style="font-size:11px">${esc(b.moveLabel)}</td>
             <td>${b.hp}</td><td>${b.atk}</td><td>${b.sp}</td><td>${b.eva}</td><td>${b.spd}</td><td>${b.cost}</td>
+            <td class="muted" style="font-size:11px;text-align:left">${b.passive ? esc(describePassive(b.passive)) : '—'}</td>
           </tr>`,
        ).join('')}</tbody>`,
     );
@@ -99,14 +101,15 @@ export function renderDeckBuilder(
   function renderSkills(): void {
     html(
       skillsEl,
-      `<thead><tr><th>이름</th><th>데미지</th><th>사거리</th><th>형태</th><th>SP</th><th>C</th></tr></thead>
-       <tbody>${SELECTABLE_SKILLS.map(
-         (s) => `<tr data-skill="${s.id}" class="${s.id === selectedSkill ? 'selected' : ''}">
+      `<thead><tr><th>이름</th><th>데미지/회복</th><th>사거리</th><th>형태</th><th>SP</th><th>C</th></tr></thead>
+       <tbody>${SELECTABLE_SKILLS.map((s) => {
+         const amount = `${s.kind === 'heal' ? '+' : ''}${s.minDamage}~${s.maxDamage}`;
+         return `<tr data-skill="${s.id}" class="${s.id === selectedSkill ? 'selected' : ''}">
             <td>${esc(s.name)}${s.note ? `<div class="muted" style="font-size:11px">${esc(s.note)}</div>` : ''}</td>
-            <td>${s.minDamage}~${s.maxDamage}</td><td>${s.range}</td>
+            <td style="color:${s.kind === 'heal' ? 'var(--ok)' : ''}">${amount}</td><td>${s.range}</td>
             <td>${esc(SHAPE_LABEL[s.shape] ?? s.shape)}</td><td>${s.spCost}</td><td>${s.cost}</td>
-          </tr>`,
-       ).join('')}</tbody>`,
+          </tr>`;
+       }).join('')}</tbody>`,
     );
   }
 

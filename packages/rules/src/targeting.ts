@@ -59,14 +59,23 @@ export function targetableCells(state: MatchState, from: Coord, skill: Skill): C
   return cells;
 }
 
-/** 해당 스킬로 지금 때릴 수 있는 적 기물. */
+/**
+ * 해당 스킬로 지금 대상 지정할 수 있는 기물.
+ * `damage` 스킬은 적만, `heal` 스킬은 아군(자신 포함)만 대상이 된다 (신규 시스템).
+ */
 export function validTargets(state: MatchState, piece: PieceState, skill: Skill): PieceState[] {
   if (!piece.alive || piece.pos === null) return [];
+  const wantAlly = skill.kind === 'heal';
   const targets: PieceState[] = [];
   for (const cell of targetableCells(state, piece.pos, skill)) {
     const occupant = pieceAt(state, cell);
-    if (occupant && occupant.owner !== piece.owner) targets.push(occupant);
+    if (!occupant) continue;
+    const isAlly = occupant.owner === piece.owner;
+    if (isAlly === wantAlly) targets.push(occupant);
   }
+  // 힐은 자기 자신도 대상이 될 수 있는데, targetableCells는 자기 칸을 포함하지 않는다
+  // (스킬 사거리는 "내 칸을 기준으로 다른 칸까지"로 정의돼 있으므로). 자힐은 별도로 넣어 준다.
+  if (wantAlly && !targets.some((t) => t.id === piece.id)) targets.unshift(piece);
   return targets;
 }
 

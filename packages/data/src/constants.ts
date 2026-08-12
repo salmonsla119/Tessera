@@ -38,3 +38,25 @@ export const SUDDEN_DEATH_DAMAGE = 2;
 
 /** 무한 루프 방지용 하드 캡 (헤드리스 시뮬레이터에서 사용) */
 export const MAX_ROUNDS = 200;
+
+/** 지형 (신규 시스템) */
+/** 지형 위에서는 이동 범위가 이만큼 줄어든다 (최소 1칸은 유지). */
+export const TERRAIN_MOVE_PENALTY = 1;
+export const TERRAIN_MIN_RANGE = 1;
+/** 늪지: 매 턴 시작 시 고정 피해. */
+export const SWAMP_DAMAGE = 2;
+/** 숲: 서 있는 동안 회피율 보정 (상시 적용, effectiveEva에서 계산). */
+export const FOREST_EVA_BONUS = 15;
+/** 빙판: 매 턴 시작 시 이 확률(%)로 빙결 부여 — 100%면 절대 벗어날 수 없어 확률로 둔다. */
+export const GLACIER_FREEZE_CHANCE = 50;
+export const GLACIER_FREEZE_TURNS = 1;
+/** 화염지대: 매 턴 시작 시 화상 부여. */
+export const SCORCHED_BURN_VALUE = 2;
+export const SCORCHED_BURN_TURNS = 2;
+
+/** 지형 생성 — 지역처럼 뭉쳐서 분포하도록 씨앗에서 무작위로 번진다. */
+export const TERRAIN_BLOB_MIN_SIZE = 4;
+export const TERRAIN_BLOB_MAX_SIZE = 7;
+/** 배치 구역이 곧장 지형으로 뒤덮이지 않도록 씨앗은 중앙 대역(y 2~5)에서만 뽑는다. */
+export const TERRAIN_SEED_Y_MIN = 2;
+export const TERRAIN_SEED_Y_MAX = 5;

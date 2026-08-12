@@ -1,12 +1,16 @@
 import Phaser from 'phaser';
-import { requireSkill, type Skill } from '@tessera/data';
+import { requireBase, requireSkill, type Skill } from '@tessera/data';
 import {
   chebyshev,
   deployZoneCells,
+  isFrozen,
   isSkillLocked,
   movableCells,
   opponentOf,
   previewDamage,
+  previewHeal,
+  targetableCells,
+  terrainAt,
   usableSkills,
   validTargets,
   type Action,
@@ -19,7 +23,7 @@ import {
 import type { Backend, MatchView } from './backend/types';
 import { maskState } from './backend/types';
 import { BoardScene } from './game/BoardScene';
-import { BOARD_PX, baseName, skillName } from './game/theme';
+import { BOARD_PX, baseName, describePassive, skillName, STATUS_LABEL } from './game/theme';
 import { Hud, type HudModel, type LogEntry } from './ui/hud';
 import { showModal } from './ui/modal';
 
@@ -286,7 +290,17 @@ export class MatchController {
       return;
     }
 
-    if (occupant && occupant.owner === this.viewer) {
+    const attacker = this.selected;
+    const activeSkill = this.activeSkillId ? requireSkill(this.activeSkillId) : null;
+    // 치유 스킬이 활성화된 동안에는 아군(자신 포함) 클릭이 "다른 기물 선택"이 아니라
+    // "이 아군을 치유 대상으로" 로 해석된다 — 사거리 밖의 아군은 그대로 선택 가능하다.
+    const isHealTarget =
+      Boolean(occupant) &&
+      attacker !== null &&
+      activeSkill?.kind === 'heal' &&
+      validTargets(this.state, attacker, activeSkill).some((t) => t.id === occupant!.id);
+
+    if (occupant && occupant.owner === this.viewer && !isHealTarget) {
       this.selectedId = occupant.id;
       this.activeSkillId = this.defaultSkillFor(occupant);
       this.pendingTargetId = null;
@@ -294,21 +308,19 @@ export class MatchController {
       return;
     }
 
-    const attacker = this.selected;
     if (!attacker) {
       this.refresh();
       return;
     }
 
-    if (occupant && this.activeSkillId) {
-      const skill = requireSkill(this.activeSkillId);
-      const inRange = validTargets(this.state, attacker, skill).some((t) => t.id === occupant.id);
+    if (occupant && activeSkill) {
+      const inRange = validTargets(this.state, attacker, activeSkill).some((t) => t.id === occupant.id);
       if (!inRange) {
         this.refresh();
         return;
       }
 
-      // 첫 클릭은 예상 데미지 표시, 같은 대상 두 번째 클릭이 확정.
+      // 첫 클릭은 예상 결과(데미지/회복량) 표시, 같은 대상 두 번째 클릭이 확정.
       if (this.pendingTargetId !== occupant.id) {
         this.pendingTargetId = occupant.id;
         this.refresh();
@@ -319,7 +331,7 @@ export class MatchController {
         type: 'attack',
         player: this.viewer,
         pieceId: attacker.id,
-        skillId: skill.id,
+        skillId: activeSkill.id,
         targetId: occupant.id,
       });
       return;
@@ -513,20 +525,20 @@ export class MatchController {
     }
 
     const piece = this.selected;
-    if (!piece || !piece.alive || piece.pos === null || this.state.turnOwner !== this.viewer) {
+    if (!piece || !piece.alive || piece.pos === null || this.state.turnOwner !== this.viewer || isFrozen(piece)) {
       return {};
     }
 
+    // 사거리 형태 전체를 보여준다 — 지금 그 칸에 대상이 있는지와 무관하게, 스킬이 닿는 범위 자체를 보여준다.
+    // damage 스킬은 빨간 칸, heal 스킬은 초록 칸으로 구분한다 (신규 시스템).
     const skill = this.activeSkillId ? requireSkill(this.activeSkillId) : null;
-    const attack = skill
-      ? validTargets(viewState, piece, skill)
-          .map((t) => t.pos)
-          .filter((pos): pos is Coord => pos !== null)
-      : [];
+    const cells = skill ? targetableCells(viewState, piece.pos, skill) : [];
+    const isHeal = skill?.kind === 'heal';
 
     return {
       move: this.state.ap[this.viewer] > 0 ? movableCells(viewState, piece) : [],
-      attack,
+      attack: isHeal ? [] : cells,
+      heal: isHeal ? cells : [],
       selected: piece.pos,
     };
   }
@@ -541,12 +553,14 @@ export class MatchController {
     let preview: HudModel['preview'] = null;
     if (actingPiece && actingPiece.pos && this.pendingTargetId && this.activeSkillId) {
       const target = this.state.pieces.find((p) => p.id === this.pendingTargetId);
+      const skill = requireSkill(this.activeSkillId);
       if (target?.pos) {
         const distance = chebyshev(actingPiece.pos, target.pos);
         preview = {
           targetName: `${baseName(target.baseId)}(${skillName(target.skillId)})`,
           distance,
-          range: previewDamage(actingPiece, requireSkill(this.activeSkillId), distance),
+          isHeal: skill.kind === 'heal',
+          range: skill.kind === 'heal' ? previewHeal(skill) : previewDamage(this.state, actingPiece, skill, distance),
         };
       }
     }
@@ -566,6 +580,8 @@ export class MatchController {
       suddenDeath: this.state.suddenDeath,
       selected: viewedPiece,
       isMine: viewedPiece !== null && viewedPiece.owner === viewer,
+      selectedTerrain: viewedPiece?.pos ? terrainAt(this.state, viewedPiece.pos) : null,
+      selectedPassiveText: viewedPiece ? passiveTextFor(viewedPiece) : null,
       activeSkillId: this.activeSkillId,
       usableSkills: skills,
       lockedSkill: locked,
@@ -623,15 +639,28 @@ function describeEvents(events: readonly GameEvent[], before: MatchState): LogEn
           owner: ownerOf(event.pieceId),
         });
         break;
+      case 'Healed':
+        if (event.amount > 0) {
+          entries.push({
+            text: `${nameOf(event.pieceId)} HP +${event.amount} (${event.hp} 남음)`,
+            owner: ownerOf(event.pieceId),
+          });
+        }
+        break;
       case 'Focused':
         entries.push({ text: `${nameOf(event.pieceId)} 집중 · SP ${event.sp}`, owner: ownerOf(event.pieceId) });
         break;
       case 'SpDrained':
         entries.push({ text: `${nameOf(event.pieceId)} SP −${event.amount}`, owner: ownerOf(event.pieceId) });
         break;
-      case 'StatusApplied':
-        entries.push({ text: `${nameOf(event.pieceId)} 회피 −${event.value} (${event.turns}턴)`, owner: ownerOf(event.pieceId) });
+      case 'StatusApplied': {
+        const suffix = event.kind === 'freeze' ? '' : ` −${event.value}`;
+        entries.push({
+          text: `${nameOf(event.pieceId)} ${STATUS_LABEL[event.kind]}${suffix} (${event.turns}턴)`,
+          owner: ownerOf(event.pieceId),
+        });
         break;
+      }
       case 'PieceDown':
         entries.push({ text: `${nameOf(event.pieceId)} 전사`, owner: ownerOf(event.pieceId), highlight: true });
         break;
@@ -653,4 +682,9 @@ function describeEvents(events: readonly GameEvent[], before: MatchState): LogEn
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function passiveTextFor(piece: PieceState): string | null {
+  const passive = requireBase(piece.baseId).passive;
+  return passive ? describePassive(passive) : null;
 }

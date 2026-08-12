@@ -58,3 +58,27 @@ export function pieceOf(state: MatchState, id: string): PieceState {
 export function cellSet(cells: Coord[]): Set<string> {
   return new Set(cells.map((c) => `${c.x},${c.y}`));
 }
+
+/**
+ * 매치 생성 절차 없이 지정한 기물만 담은 최소 상태. 지형은 전부 평지(빈 맵)다 —
+ * 데미지·회피처럼 보드 맥락이 필요 없는 단위 테스트용.
+ */
+export function bareState(pieces: PieceState[]): MatchState {
+  return {
+    seed: 1,
+    rngCursor: 0,
+    phase: 'battle',
+    first: 'A',
+    turnOwner: 'A',
+    turn: 1,
+    round: 1,
+    pieces,
+    terrain: {},
+    teamSpeed: { A: 0, B: 0 },
+    apPoolTenths: { A: 0, B: 0 },
+    ap: { A: 5, B: 5 },
+    deployedPlayers: ['A', 'B'],
+    winner: null,
+    suddenDeath: false,
+  };
+}

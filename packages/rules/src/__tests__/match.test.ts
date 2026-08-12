@@ -239,8 +239,10 @@ describe('서든데스 (GDD §8.4)', () => {
     expect(state.round).toBeGreaterThan(SUDDEN_DEATH_ROUND);
   });
 
-  it('서든데스 이전에는 HP가 저절로 줄지 않는다', () => {
-    let state = startedMatch(DECK_A, DECK_B, 11);
+  it('서든데스 이전에는 HP가 저절로 줄지 않는다 (지형 없음 기준)', () => {
+    // 지형 위해(늪지 등)는 서든데스와 별개로 HP를 깎는 게 맞으므로, 이 테스트는
+    // 그 변수를 없애고 순수한 서든데스 타이밍만 본다.
+    let state = { ...startedMatch(DECK_A, DECK_B, 11), terrain: {} };
     for (let i = 0; i < 10; i++) {
       state = applyAction(state, { type: 'endTurn', player: state.turnOwner }).state;
     }

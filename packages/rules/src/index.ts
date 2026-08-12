@@ -2,6 +2,8 @@ export * from './types';
 export * from './rng';
 export * from './ap';
 export * from './board';
+export * from './terrain';
+export * from './passives';
 export * from './state';
 export * from './movement';
 export * from './targeting';

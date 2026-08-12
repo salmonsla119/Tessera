@@ -8,6 +8,31 @@ export const MovePatternSchema = z.object({
   range: z.number().int().min(1),
 });
 
+/** 지형 (신규 시스템 — GDD 미기재, 구현 결정 사항). `plain`은 평지(효과 없음)다. */
+export const TerrainKindSchema = z.enum(['plain', 'swamp', 'forest', 'glacier', 'scorched']);
+
+/** 상태이상 종류. `evaDown`·`burn`·`bleed`는 매 턴 값을 적용하고, `freeze`는 행동 자체를 막는다. */
+export const StatusKindSchema = z.enum(['evaDown', 'burn', 'bleed', 'freeze']);
+
+/**
+ * 베이스 패시브 (신규 시스템). 기물마다 최대 1개.
+ * - `terrainImmune`: 지정 지형의 이동 페널티·효과를 전부 무시한다.
+ * - `statusImmune`: 지정 상태이상에 걸리지 않는다.
+ * - `auraHeal`: 자기 턴 시작마다 반경 내 아군(자신 포함)을 회복시킨다.
+ * - `auraBuff`: 반경 내 아군(자신 포함)의 스탯에 상시 보정을 더한다.
+ */
+export const PassiveSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('terrainImmune'), terrain: TerrainKindSchema }),
+  z.object({ kind: z.literal('statusImmune'), status: StatusKindSchema }),
+  z.object({ kind: z.literal('auraHeal'), radius: z.number().int().min(1), amount: z.number().int().min(1) }),
+  z.object({
+    kind: z.literal('auraBuff'),
+    radius: z.number().int().min(1),
+    stat: z.enum(['atk', 'eva']),
+    value: z.number().int(),
+  }),
+]);
+
 export const BaseSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -19,20 +44,26 @@ export const BaseSchema = z.object({
   eva: z.number().int().min(0),
   spd: z.number().int().min(0),
   cost: z.number().int().min(0),
+  passive: PassiveSchema.nullable(),
 });
 
 /** 사거리 형태 (GDD §6). `area`만 경로를 무시한다. */
 export const RangeShapeSchema = z.enum(['adjacent', 'orth', 'diag', 'all8', 'area']);
 
+/** `evaDown`·`burn`·`bleed`·`freeze`는 상태이상으로 남고, `spDrain`은 명중 즉시 1회 적용된다. */
 export const SkillEffectSchema = z.object({
-  kind: z.enum(['evaDown', 'spDrain']),
+  kind: z.enum(['evaDown', 'spDrain', 'burn', 'bleed', 'freeze']),
   value: z.number().int(),
   turns: z.number().int().min(0),
 });
 
+/** `damage`는 적을, `heal`은 아군(자신 포함)을 대상으로 한다. */
+export const SkillKindSchema = z.enum(['damage', 'heal']);
+
 export const SkillSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
+  kind: SkillKindSchema,
   minDamage: z.number().int().min(0),
   maxDamage: z.number().int().min(0),
   range: z.number().int().min(1),
@@ -58,9 +89,13 @@ export const DeckSchema = z.object({
 
 export type MoveDirs = z.infer<typeof MoveDirsSchema>;
 export type MovePattern = z.infer<typeof MovePatternSchema>;
+export type TerrainKind = z.infer<typeof TerrainKindSchema>;
+export type StatusKind = z.infer<typeof StatusKindSchema>;
+export type Passive = z.infer<typeof PassiveSchema>;
 export type Base = z.infer<typeof BaseSchema>;
 export type RangeShape = z.infer<typeof RangeShapeSchema>;
 export type SkillEffect = z.infer<typeof SkillEffectSchema>;
+export type SkillKind = z.infer<typeof SkillKindSchema>;
 export type Skill = z.infer<typeof SkillSchema>;
 export type DeckPiece = z.infer<typeof DeckPieceSchema>;
 export type Deck = z.infer<typeof DeckSchema>;

@@ -1,4 +1,4 @@
-import { getBase, getSkill } from '@tessera/data';
+import { getBase, getSkill, type Passive, type StatusKind, type TerrainKind } from '@tessera/data';
 import type { PlayerId } from '@tessera/rules';
 
 export const CELL = 66;
@@ -12,6 +12,7 @@ export const COLORS = {
   label: 0x6f7a90,
   moveHint: 0x4ade80,
   attackHint: 0xf87171,
+  healHint: 0x4ade80,
   selected: 0x6ea8fe,
   deployZone: 0x6ea8fe,
   playerA: 0x4c8dff,
@@ -21,6 +22,58 @@ export const COLORS = {
   spBar: 0x6ea8fe,
   hidden: 0x515a6e,
 } as const;
+
+/** 지형 타일 색 (신규 시스템). 평지는 칠하지 않는다 — 기본 체스판 무늬 그대로 둔다. */
+export const TERRAIN_COLORS: Partial<Record<TerrainKind, number>> = {
+  swamp: 0x4d5a2e,
+  forest: 0x1f4d33,
+  glacier: 0x3a5f7a,
+  scorched: 0x6b2f22,
+};
+
+export const TERRAIN_LABEL: Record<TerrainKind, string> = {
+  plain: '평지',
+  swamp: '늪지',
+  forest: '숲',
+  glacier: '빙판',
+  scorched: '화염지대',
+};
+
+export const TERRAIN_NOTE: Record<TerrainKind, string> = {
+  plain: '',
+  swamp: '이동 범위 −1 · 매 턴 시작 시 피해',
+  forest: '이동 범위 −1 · 회피율 +15%',
+  glacier: '이동 범위 −1 · 매 턴 시작 시 50% 확률로 빙결',
+  scorched: '이동 범위 −1 · 매 턴 시작 시 화상 부여',
+};
+
+export const STATUS_LABEL: Record<StatusKind, string> = {
+  evaDown: '회피 감소',
+  burn: '화상',
+  bleed: '출혈',
+  freeze: '빙결',
+};
+
+export const STATUS_COLOR: Record<StatusKind, string> = {
+  evaDown: '#c084fc',
+  burn: '#ff8f4d',
+  bleed: '#ff5d6c',
+  freeze: '#7dd3fc',
+};
+
+/** 패시브를 사람이 읽는 한 줄 설명으로 바꾼다 (신규 시스템). */
+export function describePassive(passive: Passive): string {
+  switch (passive.kind) {
+    case 'terrainImmune':
+      return `${TERRAIN_LABEL[passive.terrain]} 지형 면역 (페널티·효과 모두 무시)`;
+    case 'statusImmune':
+      return `${STATUS_LABEL[passive.status]} 면역`;
+    case 'auraHeal':
+      return `자기 턴 시작 시 반경 ${passive.radius}칸 이내 아군(자신 포함) HP +${passive.amount}`;
+    case 'auraBuff':
+      return `반경 ${passive.radius}칸 이내 아군(자신 포함) ${passive.stat === 'atk' ? '공격력' : '회피'} +${passive.value}`;
+  }
+}
 
 export function ownerColor(owner: PlayerId): number {
   return owner === 'A' ? COLORS.playerA : COLORS.playerB;
@@ -33,6 +86,15 @@ const SHORT_LABEL: Record<string, string> = {
   acolyte: '사',
   ranger: '순',
   warlord: '장',
+  mystic: '주',
+  berserker: '광',
+  paladin: '성',
+  assassin: '자',
+  shaman: '토',
+  templar: '단',
+  frostguard: '서',
+  swampstalker: '늪',
+  pyromancer: '화',
 };
 
 export function pieceLabel(baseId: string): string {

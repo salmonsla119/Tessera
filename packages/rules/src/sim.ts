@@ -62,17 +62,19 @@ function autoDeploy(state: MatchState, player: PlayerId): Action {
 function chooseAction(state: MatchState, player: PlayerId, rand: () => number): Action {
   const actions = legalActions(state, player);
   const attacks = actions.filter((a) => a.type === 'attack');
+  const damageAttacks = attacks.filter((a) => a.type === 'attack' && requireSkill(a.skillId).kind !== 'heal');
+  const healAttacks = attacks.filter((a) => a.type === 'attack' && requireSkill(a.skillId).kind === 'heal');
 
-  if (attacks.length > 0) {
-    let best = attacks[0]!;
+  if (damageAttacks.length > 0) {
+    let best = damageAttacks[0]!;
     let bestScore = -Infinity;
-    for (const action of attacks) {
+    for (const action of damageAttacks) {
       if (action.type !== 'attack') continue;
       const attacker = getPiece(state, action.pieceId)!;
       const target = getPiece(state, action.targetId)!;
       const skill = requireSkill(action.skillId);
       const distance = chebyshev(attacker.pos!, target.pos!);
-      const preview = previewDamage(attacker, skill, distance);
+      const preview = previewDamage(state, attacker, skill, distance);
       const expected = (preview.min + preview.max) / 2;
       // 마무리 일격에 가산점을 줘서 딜 낭비를 줄인다.
       const lethalBonus = expected >= target.hp ? 100 : 0;
@@ -83,6 +85,22 @@ function chooseAction(state: MatchState, player: PlayerId, rand: () => number): 
       }
     }
     return best;
+  }
+
+  // 때릴 대상이 없고 많이 다친 아군이 있으면 치유를 우선한다.
+  if (healAttacks.length > 0) {
+    let best = healAttacks[0]!;
+    let bestMissingRatio = 0.3;
+    for (const action of healAttacks) {
+      if (action.type !== 'attack') continue;
+      const target = getPiece(state, action.targetId)!;
+      const missingRatio = 1 - target.hp / target.maxHp;
+      if (missingRatio > bestMissingRatio) {
+        bestMissingRatio = missingRatio;
+        best = action;
+      }
+    }
+    if (bestMissingRatio > 0.3) return best;
   }
 
   const moves = actions.filter((a) => a.type === 'move');

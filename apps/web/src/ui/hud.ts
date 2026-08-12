@@ -1,6 +1,6 @@
-import { requireBase, type Skill } from '@tessera/data';
+import { requireBase, type Skill, type TerrainKind } from '@tessera/data';
 import { formatCarry, type DamageRange, type PieceState, type PlayerId } from '@tessera/rules';
-import { baseName, skillName } from '../game/theme';
+import { baseName, skillName, STATUS_COLOR, STATUS_LABEL, TERRAIN_LABEL, TERRAIN_NOTE } from '../game/theme';
 import { delegate, esc, html } from './dom';
 
 export interface LogEntry {
@@ -25,13 +25,17 @@ export interface HudModel {
   selected: PieceState | null;
   /** selected가 내 기물인지 — 적 기물은 정보만 보여주고 조작 버튼은 숨긴다. */
   isMine: boolean;
+  /** selected가 서 있는 지형 (신규 시스템) — 배치 전이거나 기물이 없으면 null. */
+  selectedTerrain: TerrainKind | null;
+  /** selected 베이스의 패시브 설명 — 없으면 null (신규 시스템). */
+  selectedPassiveText: string | null;
   activeSkillId: string | null;
   usableSkills: Skill[];
   /** SP 부족으로 잠긴 편성 스킬 — 잠금 상태를 보여 주려고 따로 받는다. */
   lockedSkill: Skill | null;
   canFocus: boolean;
   deployRemaining: number;
-  preview: { targetName: string; range: DamageRange; distance: number } | null;
+  preview: { targetName: string; range: DamageRange; distance: number; isHeal: boolean } | null;
   log: LogEntry[];
 }
 
@@ -149,12 +153,13 @@ export class Hud {
     const spPercent = piece.maxSp === 0 ? 0 : (piece.sp / piece.maxSp) * 100;
 
     const skillButtons = model.usableSkills
-      .map(
-        (skill) => `<button data-skill="${esc(skill.id)}" class="${model.activeSkillId === skill.id ? 'active' : ''}">
-          <span>${esc(skill.name)} <span class="muted">${skill.minDamage}~${skill.maxDamage}</span></span>
+      .map((skill) => {
+        const amount = `${skill.kind === 'heal' ? '+' : ''}${skill.minDamage}~${skill.maxDamage}`;
+        return `<button data-skill="${esc(skill.id)}" class="${model.activeSkillId === skill.id ? 'active' : ''}">
+          <span>${esc(skill.name)} <span class="muted" style="color:${skill.kind === 'heal' ? 'var(--ok)' : ''}">${amount}</span></span>
           <span class="cost">사거리 ${skill.range} · SP ${skill.spCost}</span>
-        </button>`,
-      )
+        </button>`;
+      })
       .join('');
 
     const locked = model.lockedSkill
@@ -165,16 +170,29 @@ export class Hud {
       : '';
 
     const preview = model.preview
-      ? `<div class="notice" style="margin-top:10px;border-color:var(--accent);background:rgba(110,168,254,.1);color:#cfe0ff">
-           ${esc(model.preview.targetName)} · 거리 ${model.preview.distance} ·
-           예상 <strong class="mono">${model.preview.range.min}~${model.preview.range.max}</strong>
-         </div>`
+      ? model.preview.isHeal
+        ? `<div class="notice" style="margin-top:10px;border-color:var(--ok);background:rgba(74,222,128,.1);color:#bdf5cf">
+             ${esc(model.preview.targetName)} ·
+             예상 회복량 <strong class="mono">+${model.preview.range.min}~${model.preview.range.max}</strong>
+           </div>`
+        : `<div class="notice" style="margin-top:10px;border-color:var(--accent);background:rgba(110,168,254,.1);color:#cfe0ff">
+             ${esc(model.preview.targetName)} · 거리 ${model.preview.distance} ·
+             예상 <strong class="mono">${model.preview.range.min}~${model.preview.range.max}</strong>
+           </div>`
       : '';
+
+    const terrainTag =
+      model.selectedTerrain && model.selectedTerrain !== 'plain'
+        ? `<span class="tag" title="${esc(TERRAIN_NOTE[model.selectedTerrain])}">${esc(TERRAIN_LABEL[model.selectedTerrain])}</span>`
+        : '';
 
     return `<div class="hud-block">
       <div class="row" style="justify-content:space-between">
         <strong>${esc(baseName(piece.baseId))} <span class="who ${piece.owner}" style="font-size:12px">P${piece.owner}</span></strong>
-        <span class="tag">${model.isMine ? esc(base.moveLabel) : '상대 기물'}</span>
+        <div class="row" style="gap:6px">
+          ${terrainTag}
+          <span class="tag">${model.isMine ? esc(base.moveLabel) : '상대 기물'}</span>
+        </div>
       </div>
 
       <div style="margin-top:10px">
@@ -192,9 +210,18 @@ export class Hud {
       </div>
 
       ${
+        model.selectedPassiveText
+          ? `<div class="notice" style="margin-top:8px;border-color:var(--accent);background:rgba(110,168,254,.08);color:#cfe0ff">패시브 · ${esc(model.selectedPassiveText)}</div>`
+          : ''
+      }
+
+      ${
         piece.statuses.length > 0
           ? `<div style="margin-top:8px">${piece.statuses
-              .map((s) => `<span class="tag" style="color:#c084fc">회피 −${s.value} (${s.turnsLeft}턴)</span>`)
+              .map((s) => {
+                const suffix = s.kind === 'freeze' ? '' : ` −${s.value}`;
+                return `<span class="tag" style="color:${STATUS_COLOR[s.kind]}">${esc(STATUS_LABEL[s.kind])}${suffix} (${s.turnsLeft}턴)</span>`;
+              })
               .join(' ')}</div>`
           : ''
       }

@@ -1,4 +1,4 @@
-import type { DeckPiece } from '@tessera/data';
+import type { DeckPiece, StatusKind, TerrainKind } from '@tessera/data';
 
 export type PlayerId = 'A' | 'B';
 
@@ -12,7 +12,8 @@ export type PieceId = string;
 export type MatchPhase = 'deploying' | 'battle' | 'finished';
 
 export interface StatusEffect {
-  kind: 'evaDown';
+  kind: StatusKind;
+  /** evaDown·burn·bleed의 세기. freeze는 켜져 있는 것 자체가 효과라 0을 쓴다. */
   value: number;
   /** 대상 플레이어의 턴 시작마다 1씩 감소한다 (GDD §9 미확정 항목 — 대상 턴 기준으로 확정). */
   turnsLeft: number;
@@ -55,6 +56,11 @@ export interface MatchState {
   /** 라운드 = 양측이 1턴씩 진행한 단위 (1부터). */
   round: number;
   pieces: PieceState[];
+  /**
+   * 지형 (신규 시스템). 매치 시작 시 시드로 확정되며 이후 바뀌지 않는다.
+   * `coordKey(좌표)`를 키로 쓰고, 없는 칸은 평지(`plain`)로 취급한다.
+   */
+  terrain: Record<string, TerrainKind>;
   /** 매치 시작 시 확정. 기물이 죽어도 줄지 않는다 (GDD §2.2). */
   teamSpeed: Record<PlayerId, number>;
   /** 1/10 AP 단위 정수 누적값. 부동소수 오차 없이 이월을 계산한다. */
@@ -102,6 +108,7 @@ export type GameEvent =
   | { type: 'DiceRolled'; kind: DiceKind; value: number; sides: number }
   | { type: 'Evaded'; pieceId: PieceId }
   | { type: 'Damaged'; pieceId: PieceId; amount: number; hp: number }
+  | { type: 'Healed'; pieceId: PieceId; amount: number; hp: number }
   | { type: 'StatusApplied'; pieceId: PieceId; kind: StatusEffect['kind']; value: number; turns: number }
   | { type: 'SpDrained'; pieceId: PieceId; amount: number; sp: number }
   | { type: 'PieceDown'; pieceId: PieceId }

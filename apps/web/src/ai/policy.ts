@@ -60,6 +60,35 @@ function threatCells(state: MatchState, enemyRole: PlayerId): Set<string> {
   return cells;
 }
 
+/** legalActions가 만든 attack 액션 중 damage 스킬만 남긴다 — heal은 별도 로직에서 다룬다. */
+function damageAttacksOf(actions: Action[]): Extract<Action, { type: 'attack' }>[] {
+  return actions.filter(
+    (a): a is Extract<Action, { type: 'attack' }> => a.type === 'attack' && requireSkill(a.skillId).kind !== 'heal',
+  );
+}
+
+/** heal 스킬로 만들어진 attack 액션만 남긴다. */
+function healAttacksOf(actions: Action[]): Extract<Action, { type: 'attack' }>[] {
+  return actions.filter(
+    (a): a is Extract<Action, { type: 'attack' }> => a.type === 'attack' && requireSkill(a.skillId).kind === 'heal',
+  );
+}
+
+/** 가장 많이 다친(비율 기준) 아군을 고른다. 30% 이상 다친 대상이 없으면 null. */
+function bestHeal(state: MatchState, heals: Extract<Action, { type: 'attack' }>[]): Action | null {
+  let best: Action | null = null;
+  let worstRatio = 0.3;
+  for (const action of heals) {
+    const target = getPiece(state, action.targetId)!;
+    const missingRatio = 1 - target.hp / target.maxHp;
+    if (missingRatio > worstRatio) {
+      worstRatio = missingRatio;
+      best = action;
+    }
+  }
+  return best;
+}
+
 function bestAttack(
   state: MatchState,
   attacks: Extract<Action, { type: 'attack' }>[],
@@ -71,8 +100,8 @@ function bestAttack(
     const target = getPiece(state, action.targetId)!;
     const skill = requireSkill(action.skillId);
     const distance = chebyshev(attacker.pos!, target.pos!);
-    const preview = previewDamage(attacker, skill, distance);
-    const hitChance = 1 - effectiveEva(target) / 100;
+    const preview = previewDamage(state, attacker, skill, distance);
+    const hitChance = 1 - effectiveEva(state, target) / 100;
     const expected = ((preview.min + preview.max) / 2) * hitChance;
     const lethal = preview.min * hitChance >= target.hp || expected >= target.hp;
     const score = expected + (lethal ? 1000 + requireSkill(target.skillId).cost : 0) + rand() * 0.01;
@@ -98,8 +127,11 @@ function mediumPolicy(rand: () => number): AiPlayer {
     if (state.phase === 'deploying') return planDeploy(state, role, true);
 
     const actions = legalActions(state, role);
-    const attacks = actions.filter((a): a is Extract<Action, { type: 'attack' }> => a.type === 'attack');
-    if (attacks.length > 0) return bestAttack(state, attacks, rand)!.action;
+    const damageAttacks = damageAttacksOf(actions);
+    if (damageAttacks.length > 0) return bestAttack(state, damageAttacks, rand)!.action;
+
+    const heal = bestHeal(state, healAttacksOf(actions));
+    if (heal) return heal;
 
     const moves = actions.filter((a): a is Extract<Action, { type: 'move' }> => a.type === 'move');
     const enemies = livingPieces(state, opponentOf(role));
@@ -135,11 +167,14 @@ function hardPolicy(rand: () => number): AiPlayer {
     if (state.phase === 'deploying') return planDeploy(state, role, true);
 
     const actions = legalActions(state, role);
-    const attacks = actions.filter((a): a is Extract<Action, { type: 'attack' }> => a.type === 'attack');
-    if (attacks.length > 0) {
-      const best = bestAttack(state, attacks, rand)!;
+    const damageAttacks = damageAttacksOf(actions);
+    if (damageAttacks.length > 0) {
+      const best = bestAttack(state, damageAttacks, rand)!;
       if (best.lethal) return best.action;
     }
+
+    const heal = bestHeal(state, healAttacksOf(actions));
+    if (heal) return heal;
 
     const threats = threatCells(state, opponentOf(role));
     const endangered = livingPieces(state, role).filter(
@@ -152,7 +187,7 @@ function hardPolicy(rand: () => number): AiPlayer {
       if (retreat) return retreat;
     }
 
-    if (attacks.length > 0) return bestAttack(state, attacks, rand)!.action;
+    if (damageAttacks.length > 0) return bestAttack(state, damageAttacks, rand)!.action;
 
     const enemies = livingPieces(state, opponentOf(role));
     if (moves.length > 0 && enemies.length > 0) {

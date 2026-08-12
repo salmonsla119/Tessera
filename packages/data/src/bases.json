@@ -9,7 +9,8 @@
     "sp": 6,
     "eva": 10,
     "spd": 6,
-    "cost": 3
+    "cost": 3,
+    "passive": null
   },
   {
     "id": "lancer",
@@ -21,7 +22,8 @@
     "sp": 8,
     "eva": 15,
     "spd": 9,
-    "cost": 3
+    "cost": 3,
+    "passive": null
   },
   {
     "id": "rider",
@@ -33,7 +35,8 @@
     "sp": 6,
     "eva": 20,
     "spd": 12,
-    "cost": 4
+    "cost": 4,
+    "passive": null
   },
   {
     "id": "acolyte",
@@ -45,7 +48,8 @@
     "sp": 14,
     "eva": 15,
     "spd": 8,
-    "cost": 3
+    "cost": 3,
+    "passive": null
   },
   {
     "id": "ranger",
@@ -57,7 +61,8 @@
     "sp": 10,
     "eva": 25,
     "spd": 11,
-    "cost": 4
+    "cost": 4,
+    "passive": null
   },
   {
     "id": "warlord",
@@ -69,6 +74,124 @@
     "sp": 12,
     "eva": 20,
     "spd": 14,
-    "cost": 6
+    "cost": 6,
+    "passive": null
+  },
+  {
+    "id": "mystic",
+    "name": "주술사",
+    "moveLabel": "대각 최대 2칸",
+    "move": { "kind": "ray", "dirs": "diag", "range": 2 },
+    "hp": 16,
+    "atk": 4,
+    "sp": 16,
+    "eva": 20,
+    "spd": 9,
+    "cost": 3,
+    "passive": null
+  },
+  {
+    "id": "berserker",
+    "name": "광전사",
+    "moveLabel": "직선 1칸",
+    "move": { "kind": "ray", "dirs": "orth", "range": 1 },
+    "hp": 28,
+    "atk": 9,
+    "sp": 5,
+    "eva": 8,
+    "spd": 7,
+    "cost": 4,
+    "passive": null
+  },
+  {
+    "id": "paladin",
+    "name": "성기사",
+    "moveLabel": "8방향 1칸",
+    "move": { "kind": "ray", "dirs": "all8", "range": 1 },
+    "hp": 36,
+    "atk": 5,
+    "sp": 8,
+    "eva": 12,
+    "spd": 6,
+    "cost": 5,
+    "passive": { "kind": "auraHeal", "radius": 1, "amount": 2 }
+  },
+  {
+    "id": "assassin",
+    "name": "자객",
+    "moveLabel": "L자 도약",
+    "move": { "kind": "jump", "dirs": "knight", "range": 1 },
+    "hp": 16,
+    "atk": 6,
+    "sp": 6,
+    "eva": 30,
+    "spd": 15,
+    "cost": 4,
+    "passive": null
+  },
+  {
+    "id": "shaman",
+    "name": "토템술사",
+    "moveLabel": "대각 최대 2칸",
+    "move": { "kind": "ray", "dirs": "diag", "range": 2 },
+    "hp": 20,
+    "atk": 4,
+    "sp": 15,
+    "eva": 18,
+    "spd": 9,
+    "cost": 4,
+    "passive": { "kind": "statusImmune", "status": "freeze" }
+  },
+  {
+    "id": "templar",
+    "name": "기사단원",
+    "moveLabel": "직선 최대 2칸",
+    "move": { "kind": "ray", "dirs": "orth", "range": 2 },
+    "hp": 28,
+    "atk": 6,
+    "sp": 8,
+    "eva": 14,
+    "spd": 8,
+    "cost": 5,
+    "passive": { "kind": "auraBuff", "radius": 1, "stat": "atk", "value": 2 }
+  },
+  {
+    "id": "frostguard",
+    "name": "서리결사",
+    "moveLabel": "8방향 1칸",
+    "move": { "kind": "ray", "dirs": "all8", "range": 1 },
+    "hp": 32,
+    "atk": 5,
+    "sp": 7,
+    "eva": 12,
+    "spd": 7,
+    "cost": 4,
+    "passive": { "kind": "terrainImmune", "terrain": "glacier" }
+  },
+  {
+    "id": "swampstalker",
+    "name": "늪잠행자",
+    "moveLabel": "8방향 최대 2칸",
+    "move": { "kind": "ray", "dirs": "all8", "range": 2 },
+    "hp": 22,
+    "atk": 6,
+    "sp": 9,
+    "eva": 22,
+    "spd": 10,
+    "cost": 4,
+    "passive": { "kind": "terrainImmune", "terrain": "swamp" }
+  },
+  {
+    "id": "pyromancer",
+    "name": "화염술사",
+    "moveLabel": "대각 최대 3칸",
+    "move": { "kind": "ray", "dirs": "diag", "range": 3 },
+    "hp": 16,
+    "atk": 7,
+    "sp": 10,
+    "eva": 15,
+    "spd": 10,
+    "cost": 4,
+    "passive": { "kind": "statusImmune", "status": "burn" }
   }
 ]

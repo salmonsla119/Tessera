@@ -38,4 +38,14 @@ export const PRESET_DECKS: StoredDeck[] = [
       { baseId: 'guard', skillId: 'cleave' },
     ],
   },
+  {
+    id: 'preset-support',
+    name: '지원 편성 (신규)',
+    pieces: [
+      { baseId: 'paladin', skillId: 'mend' }, // 아군 치유 오라 + 응급처치 (5+2=7)
+      { baseId: 'acolyte', skillId: 'heal' }, // 3+3=6
+      { baseId: 'pyromancer', skillId: 'scorch' }, // 화상 부여, 자신은 화상 면역 (4+3=7)
+      { baseId: 'shaman', skillId: 'frostbite' }, // 빙결 부여, 자신은 빙결 면역 (4+3=7)
+    ],
+  },
 ];
