@@ -15,10 +15,10 @@
 | **M0** | `packages/rules` + `packages/data` — 규칙 엔진, 헤드리스 시뮬레이터 | 완료 |
 | **M1** | Phaser 로컬 핫시트 (한 브라우저에서 양측 플레이) | 완료 |
 | **M2** | 덱빌더 UI + 코스트 검증 | 완료 |
-| **M3** | 서버(`apps/server`) · 인증 · 매칭 · 비동기 매치 | **서버 구현 완료 — 클라이언트 연동(`RemoteBackend`) 대기** |
+| **M3** | 서버(`apps/server`) · 인증 · 매칭 · 비동기 매치 · 클라이언트 연동(`RemoteBackend`) | 완료 |
 | **M4** | 밸런싱 · 연출 · 사운드 · 알림 | 미착수 |
 
-온라인 대전 메뉴는 화면에 있지만 비활성이다. 지금 동작하는 것은 로컬 핫시트 한 판이다. `apps/server`는 Cloudflare Workers에 배포 가능한 상태지만, `apps/web`이 아직 `LocalBackend`만 쓰고 있어 온라인 대전은 화면에서 켜지지 않는다.
+메뉴에서 세 가지로 대전할 수 있다: **로컬 핫시트**(한 브라우저에서 양측 플레이), **AI와 대전**(하/중/상 난이도, 매칭 없이 즉시 시작), **온라인 비동기 대전**(로그인 → 매칭 큐 → 서버 권위 판정, `apps/server` 필요). 온라인 대전은 빌드 시 `VITE_API_BASE_URL`이 설정돼 있어야 활성화된다 — 비어 있으면 조용히 꺼진 채로 로컬/AI 대전만 남는다.
 
 ---
 
@@ -73,7 +73,7 @@ interface Backend {
 }
 ```
 
-모든 메서드가 비동기라 원격 구현을 끼워 넣을 때 **호출부(`app.ts`, `match.ts`)를 고칠 필요가 없다.**
+모든 메서드가 비동기라 덱 CRUD·액션 제출 호출부는 원격 구현으로 바꿔도 그대로다. 다만 `MatchController`(`match.ts`)는 원래 "한 화면에 앉은 사람이 배치 순서·턴에 따라 바뀐다"는 핫시트 전제로 짜여 있어, 실제로 붙여 보니 그 전제 자체를 손볼 필요가 있었다 — 온라인/AI에서는 이 컨트롤러가 **항상 같은 한쪽만** 대변해야 하기 때문이다. 그래서 `MatchOptions`에 `fixedViewer`(고정 시점 — 상대 턴엔 조작 막고 자리 교대 모달도 생략), `autoPlayer`(AI가 반대쪽을 대신 두는 훅), `pollMs`(온라인에서 상대 수를 주기적으로 확인)를 추가했다. 지정하지 않으면 기존 핫시트 동작 그대로다.
 
 원격 구현이 반드시 지켜야 하는 것 (PLAN §4.2):
 
@@ -94,7 +94,11 @@ pnpm --filter @tessera/server dev          # wrangler dev (로컬)
 pnpm --filter @tessera/server deploy       # wrangler deploy
 ```
 
-`apps/web`을 여기 붙이려면 위 `Backend` 인터페이스를 구현하는 `RemoteBackend`를 하나 추가하고, 로그인 화면과 매치 목록/대기열 UI를 이어 붙이면 된다 — 아직 안 한 부분이다.
+`apps/web/src/online/`에 이 서버에 붙는 `RemoteBackend`(위 `Backend` 구현)와 `api.ts`(fetch 래퍼)가 있고, `ui/auth.ts`·`ui/lobby.ts`가 로그인·덱·매칭 큐·진행 중인 매치 목록 화면을 맡는다. GitHub Pages(클라이언트)와 Workers(서버)는 서로 다른 사이트라 세션 쿠키는 `SameSite=None; Secure`로 발급한다.
+
+### AI 대전
+
+`apps/web/src/ai/policy.ts`에 난이도별 정책이 있다 — 하(완전 무작위) · 중(기대 데미지 최댓값 공격, 없으면 최근접 적에게 접근) · 상(마무리 공격 최우선, 빈사 아군은 사거리 밖으로 후퇴 시도). 서버 없이 `packages/rules`를 브라우저에서 그대로 돌리는 `AiMatchBackend`(메모리 전용 — 새로고침하면 끝나는 캐주얼 대전) 위에서, `MatchController`의 `autoPlayer` 훅이 상대 턴마다 정책을 호출해 자동으로 둔다.
 
 ---
 

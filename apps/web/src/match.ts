@@ -5,6 +5,7 @@ import {
   deployZoneCells,
   isSkillLocked,
   movableCells,
+  opponentOf,
   previewDamage,
   usableSkills,
   validTargets,
@@ -40,11 +41,33 @@ async function createBoardScene(parentId: string): Promise<{ game: Phaser.Game; 
   return { game, scene };
 }
 
+export interface MatchOptions {
+  /**
+   * 이 컨트롤러가 항상 대변하는 쪽. 설정하지 않으면 로컬 핫시트 모드로 동작해
+   * 배치 순서·턴 교대에 따라 "지금 화면을 보는 사람"이 바뀐다 (기존 동작).
+   * 설정하면 그 반대쪽 턴에는 조작이 막히고, 자리 교대 모달도 뜨지 않는다
+   * (AI 대전·온라인 대전 모두 이 모드를 쓴다).
+   */
+  fixedViewer?: PlayerId;
+  /**
+   * fixedViewer의 반대쪽을 대신 조작하는 함수. 설정하면 그쪽 턴이 됐을 때
+   * 애니메이션 페이싱을 두고 자동으로 액션을 제출한다 (AI 대전 전용).
+   * 온라인 대전에서는 반대쪽이 실제 사람이므로 설정하지 않는다.
+   */
+  autoPlayer?: (state: MatchState, role: PlayerId) => Action;
+  /**
+   * 설정하면 이 간격(ms)으로 backend.getMatch를 불러 상대의 원격 진행을 반영한다
+   * (온라인 대전 전용 — 상대의 수는 이벤트가 아니라 폴링으로만 알 수 있다).
+   */
+  pollMs?: number;
+}
+
 /**
  * 한 판의 진행을 맡는 컨트롤러.
  *
  * 규칙 판정은 전혀 하지 않는다 — 백엔드에 액션을 제출하고, 돌려받은 상태와 이벤트를
- * 보드/HUD에 나눠 준다. 온라인 백엔드로 바꿔도 이 파일은 그대로 쓸 수 있다.
+ * 보드/HUD에 나눠 준다. 백엔드와 MatchOptions를 바꿔 끼우면 로컬 핫시트·AI 대전·
+ * 온라인 대전을 모두 이 클래스 하나로 돌린다.
  */
 export class MatchController {
   private game!: Phaser.Game;
@@ -62,15 +85,26 @@ export class MatchController {
   private pendingTargetId: string | null = null;
   private log: LogEntry[] = [];
   private busy = false;
+  private destroyed = false;
+  private pollHandle: ReturnType<typeof setInterval> | null = null;
   /** 턴 시작 시 받은 행동 횟수. TurnStarted 이벤트에서만 갱신한다. */
   private apMax: Record<PlayerId, number> = { A: 0, B: 0 };
+
+  private readonly fixedViewer?: PlayerId;
+  private readonly autoPlayer?: (state: MatchState, role: PlayerId) => Action;
+  private readonly pollMs?: number;
 
   constructor(
     private readonly backend: Backend,
     private readonly boardEl: HTMLElement,
     private readonly hudEl: HTMLElement,
     private readonly onExit: () => void,
-  ) {}
+    options: MatchOptions = {},
+  ) {
+    this.fixedViewer = options.fixedViewer;
+    this.autoPlayer = options.autoPlayer;
+    this.pollMs = options.pollMs;
+  }
 
   async start(view: MatchView): Promise<void> {
     this.matchId = view.matchId;
@@ -91,7 +125,7 @@ export class MatchController {
 
     this.pushLog(`매치 시작 — 선공은 플레이어 ${this.state.first}`, undefined, true);
 
-    if (this.state.phase === 'deploying') {
+    if (this.state.phase === 'deploying' && !this.fixedViewer) {
       await showModal({
         title: `플레이어 ${this.viewer} 배치`,
         body: '상대에게 화면이 보이지 않게 한 뒤 진행하세요.',
@@ -100,9 +134,16 @@ export class MatchController {
     }
 
     this.refresh();
+    await this.runAutoTurnsIfNeeded();
+
+    if (this.pollMs && this.fixedViewer) {
+      this.pollHandle = setInterval(() => void this.pollRemote(), this.pollMs);
+    }
   }
 
   destroy(): void {
+    this.destroyed = true;
+    if (this.pollHandle) clearInterval(this.pollHandle);
     this.game?.destroy(true);
     this.hud?.destroy();
     this.boardEl.replaceChildren();
@@ -110,6 +151,7 @@ export class MatchController {
 
   /** 지금 화면을 보고 있는 플레이어. 배치 중에는 아직 제출하지 않은 쪽. */
   private get viewer(): PlayerId {
+    if (this.fixedViewer) return this.fixedViewer;
     if (this.state.phase === 'deploying') {
       return this.state.deployedPlayers.includes('A') ? 'B' : 'A';
     }
@@ -174,11 +216,16 @@ export class MatchController {
     this.placements.clear();
 
     if (this.state.phase === 'deploying') {
-      await showModal({
-        title: `플레이어 ${this.viewer}에게 넘기세요`,
-        body: '상대 배치는 아직 공개되지 않습니다.',
-        actions: [{ label: '확인', value: 'ok', primary: true }],
-      });
+      if (this.fixedViewer) {
+        // 고정 시점(AI·온라인)에서는 자리 교대가 없다 — 상대가 배치를 마칠 때까지 기다린다.
+        this.pushLog('상대 배치를 기다리는 중입니다', undefined, true);
+      } else {
+        await showModal({
+          title: `플레이어 ${this.viewer}에게 넘기세요`,
+          body: '상대 배치는 아직 공개되지 않습니다.',
+          actions: [{ label: '확인', value: 'ok', primary: true }],
+        });
+      }
     } else {
       await showModal({
         title: '배치 공개',
@@ -188,6 +235,7 @@ export class MatchController {
     }
 
     this.refresh();
+    await this.runAutoTurnsIfNeeded();
   }
 
   // ---------- 전투 ----------
@@ -207,9 +255,15 @@ export class MatchController {
     if (this.busy || this.state.phase === 'finished') return;
 
     if (this.state.phase === 'deploying') {
+      // 고정 시점에서는 내가 이미 제출했으면 더 놓을 게 없다 (상대 자리를 빌려 조작하지 않는다).
+      if (this.fixedViewer && this.state.deployedPlayers.includes(this.fixedViewer)) return;
       this.handleDeployClick(cell);
       return;
     }
+
+    // 고정 시점 모드에서는 상대 턴에 내 화면으로 조작하는 것을 막는다 — 서버도 거부하지만
+    // 여기서 막아야 "왜 안 되지" 왕복이 안 생긴다.
+    if (this.fixedViewer && this.state.turnOwner !== this.fixedViewer) return;
 
     const occupant = this.state.pieces.find(
       (p) => p.alive && p.pos !== null && p.pos.x === cell.x && p.pos.y === cell.y,
@@ -278,17 +332,21 @@ export class MatchController {
         this.selectedId = null;
         this.activeSkillId = null;
         this.refresh();
-        await showModal({
-          title: `플레이어 ${this.state.turnOwner} 차례`,
-          body: '화면을 상대에게 넘기고 확인을 누르세요.',
-          actions: [{ label: '확인', value: 'ok', primary: true }],
-        });
+        if (this.fixedViewer) {
+          await this.runAutoTurnsIfNeeded();
+        } else {
+          await showModal({
+            title: `플레이어 ${this.state.turnOwner} 차례`,
+            body: '화면을 상대에게 넘기고 확인을 누르세요.',
+            actions: [{ label: '확인', value: 'ok', primary: true }],
+          });
+        }
       }
 
-      this.refresh();
+      if (!this.destroyed) this.refresh();
     } catch (error) {
       this.pushLog(error instanceof Error ? error.message : '알 수 없는 오류', undefined, true);
-      this.refresh();
+      if (!this.destroyed) this.refresh();
     } finally {
       this.busy = false;
     }
@@ -296,8 +354,16 @@ export class MatchController {
 
   private async showResult(): Promise<void> {
     const winner = this.state.winner;
+    const title =
+      winner === 'draw'
+        ? '무승부'
+        : this.fixedViewer
+          ? winner === this.fixedViewer
+            ? '승리했습니다'
+            : '패배했습니다'
+          : `플레이어 ${winner} 승리`;
     await showModal({
-      title: winner === 'draw' ? '무승부' : `플레이어 ${winner} 승리`,
+      title,
       body: `${this.state.round}라운드 만에 종료되었습니다.`,
       actions: [{ label: '메뉴로', value: 'ok', primary: true }],
     });
@@ -332,12 +398,84 @@ export class MatchController {
   }
 
   private refresh(): void {
+    if (this.destroyed) return;
     const deploying = this.state.phase === 'deploying';
     const viewState = deploying ? this.deployPreviewState() : this.state;
 
     this.scene.sync(viewState, this.viewer);
     this.scene.setHighlights(this.computeHighlights(viewState));
     this.hud.render(this.buildHudModel());
+  }
+
+  // ---------- AI 자동 진행 / 온라인 폴링 ----------
+
+  /**
+   * fixedViewer의 반대쪽 턴이 되면 autoPlayer로 대신 진행한다 (AI 대전).
+   * autoPlayer가 없으면(온라인 대전) 아무것도 하지 않는다 — 상대는 자기 브라우저에서 직접 둔다.
+   */
+  private async runAutoTurnsIfNeeded(): Promise<void> {
+    if (!this.autoPlayer || !this.fixedViewer || this.destroyed) return;
+    const aiRole = opponentOf(this.fixedViewer);
+    const alreadyBusy = this.busy;
+    if (!alreadyBusy) this.busy = true;
+
+    try {
+      if (this.state.phase === 'deploying' && !this.state.deployedPlayers.includes(aiRole)) {
+        const action = this.autoPlayer(this.state, aiRole);
+        const view = await this.backend.submitAction(this.matchId, action);
+        this.state = view.state;
+        if (!this.destroyed) this.refresh();
+      }
+
+      while (!this.destroyed && this.state.phase === 'battle' && this.state.turnOwner === aiRole) {
+        await sleep(350);
+        if (this.destroyed) return;
+        const action = this.autoPlayer(this.state, aiRole);
+        const view = await this.backend.submitAction(this.matchId, action);
+        this.ingestEvents(view.events, this.state);
+        await this.scene.playEvents(view.events, view.state);
+        this.state = view.state;
+        if (!this.destroyed) this.refresh();
+      }
+
+      if (!this.destroyed && this.state.phase === 'finished') {
+        await this.showResult();
+      }
+    } catch (error) {
+      if (!this.destroyed) {
+        this.pushLog(error instanceof Error ? error.message : 'AI 진행 중 오류', undefined, true);
+        this.refresh();
+      }
+    } finally {
+      if (!alreadyBusy) this.busy = false;
+    }
+  }
+
+  /**
+   * 온라인 대전 전용 — 상대의 수는 이벤트로 오지 않으므로 주기적으로 최신 상태를 불러온다.
+   * 애니메이션 없이 즉시 반영한다 (지나간 상대 수를 뒤늦게 재생하지 않는다).
+   */
+  private async pollRemote(): Promise<void> {
+    if (this.busy || this.destroyed) return;
+    const view = await this.backend.getMatch(this.matchId).catch(() => null);
+    if (!view || this.destroyed) return;
+
+    const phaseChanged = view.state.phase !== this.state.phase;
+    const turnChanged = view.state.turn !== this.state.turn;
+    if (!phaseChanged && !turnChanged) return;
+
+    this.state = view.state;
+    this.selectedId = null;
+    this.activeSkillId = null;
+    this.pendingTargetId = null;
+    if (phaseChanged && view.state.phase === 'battle') this.pushLog('전투가 시작되었습니다', undefined, true);
+    if (turnChanged) this.pushLog('상대가 행동했습니다 — 갱신됨', undefined, true);
+    this.refresh();
+
+    if (this.state.phase === 'finished') {
+      if (this.pollHandle) clearInterval(this.pollHandle);
+      await this.showResult();
+    }
   }
 
   private computeHighlights(viewState: MatchState) {
@@ -479,4 +617,8 @@ function describeEvents(events: readonly GameEvent[], before: MatchState): LogEn
     }
   }
   return entries;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

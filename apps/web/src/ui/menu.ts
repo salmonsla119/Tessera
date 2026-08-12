@@ -1,4 +1,6 @@
 import { DECK_BUDGET, validateDeck } from '@tessera/data';
+import type { Difficulty } from '../ai/policy';
+import { DIFFICULTY_LABEL } from '../ai/policy';
 import type { StoredDeck } from '../backend/types';
 import { $, delegate, esc, html } from './dom';
 
@@ -8,8 +10,10 @@ export interface MenuHandlers {
   onDeleteDeck: (id: string) => void;
   onLoadPresets: () => void;
   onStart: (deckAId: string, deckBId: string) => void;
+  onStartAi: (deckId: string, difficulty: Difficulty) => void;
   onResume: () => void;
   onAbandon: () => void;
+  onOnline: () => void;
 }
 
 export function renderMenu(
@@ -100,9 +104,27 @@ export function renderMenu(
           </div>
 
           <div class="panel">
+            <h3>AI와 대전</h3>
+            <p class="muted" style="margin:4px 0 12px">난이도를 고르면 바로 매칭되어 대전이 시작됩니다.</p>
+            ${
+              playable.length === 0
+                ? '<div class="notice">편성 가능한 덱이 최소 1개 필요합니다.</div>'
+                : `<div style="display:grid;gap:10px">
+                     <label style="display:grid;gap:4px"><span class="muted" style="font-size:12px">내 덱</span>
+                       <select id="deck-ai">${deckOptions(0)}</select></label>
+                     <div class="row" style="gap:8px">
+                       <button data-difficulty="easy" style="flex:1">${DIFFICULTY_LABEL.easy}</button>
+                       <button data-difficulty="medium" style="flex:1">${DIFFICULTY_LABEL.medium}</button>
+                       <button data-difficulty="hard" style="flex:1">${DIFFICULTY_LABEL.hard}</button>
+                     </div>
+                   </div>`
+            }
+          </div>
+
+          <div class="panel">
             <h3>온라인 비동기 대전</h3>
-            <p class="muted" style="margin:4px 0 12px">매칭 큐와 서버 권위 판정이 붙는 모드입니다. 백엔드 연결 전이라 아직 비활성입니다.</p>
-            <button disabled style="width:100%">준비 중</button>
+            <p class="muted" style="margin:4px 0 12px">매칭 큐와 서버 권위 판정이 붙는 모드입니다. 로그인 후 큐에 등록하면 상대가 잡힐 때까지 기다립니다.</p>
+            <button data-act="online" class="primary" style="width:100%">온라인 대전 열기</button>
           </div>
         </div>
       </div>
@@ -129,7 +151,15 @@ export function renderMenu(
         handlers.onStart(a, b);
         break;
       }
+      case 'online':
+        handlers.onOnline();
+        break;
     }
+  });
+
+  delegate(container, 'button[data-difficulty]', (button) => {
+    const deckId = $<HTMLSelectElement>(container, '#deck-ai').value;
+    handlers.onStartAi(deckId, button.dataset.difficulty as Difficulty);
   });
 
   delegate(container, 'button[data-edit]', (button) => handlers.onEditDeck(button.dataset.edit!));

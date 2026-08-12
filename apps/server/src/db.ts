@@ -76,13 +76,23 @@ export async function getDeck(db: D1Database, id: string, userId: string): Promi
   return db.prepare('SELECT * FROM decks WHERE id = ? AND user_id = ?').bind(id, userId).first<DeckRow>();
 }
 
-export async function createDeck(
+/**
+ * 클라이언트가 미리 만든 id로 저장한다 (LocalBackend와 같은 저장 UX를 온라인에서도 쓰기 위함 —
+ * 새 덱이든 기존 덱 수정이든 클라이언트는 그냥 저장만 하면 된다). id가 다른 유저 소유라면
+ * 조용히 아무 일도 하지 않는다 — 클라이언트가 무작위로 생성한 id라 충돌 자체가 극히 드물고,
+ * 충돌해도 남의 덱을 훔쳐 쓰는 것보다는 저장이 무시되는 쪽이 안전하다.
+ */
+export async function upsertDeck(
   db: D1Database,
   row: { id: string; userId: string; name: string; pieces: DeckPiece[] },
   now: number,
 ): Promise<void> {
   await db
-    .prepare('INSERT INTO decks (id, user_id, name, pieces, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .prepare(
+      `INSERT INTO decks (id, user_id, name, pieces, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET name = excluded.name, pieces = excluded.pieces, updated_at = excluded.updated_at
+       WHERE decks.user_id = excluded.user_id`,
+    )
     .bind(row.id, row.userId, row.name, JSON.stringify(row.pieces), now, now)
     .run();
 }

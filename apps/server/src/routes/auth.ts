@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { createSessionToken, hashPassword, newId, SESSION_TTL_MS, verifyPassword } from '../auth';
-import { createSession, createUser, deleteSession, getUserByUsername } from '../db';
+import { createSession, createUser, deleteSession, getUserById, getUserByUsername } from '../db';
 import { requireAuth, SESSION_COOKIE } from '../middleware';
 import type { AuthedVars, Env } from '../types';
 
@@ -13,14 +13,18 @@ const CredentialsSchema = z.object({
   password: z.string().min(8).max(128),
 });
 
+// 클라이언트(GitHub Pages)와 서버(Workers)가 서로 다른 사이트라 SameSite=Lax는 쿠키를
+// 아예 못 보낸다. None은 Secure를 요구하는데, Chrome은 http://localhost도 신뢰할 수 있는
+// origin으로 취급해 로컬 개발에서도 그대로 동작한다.
+const SESSION_COOKIE_OPTS = {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'None',
+  path: '/',
+} as const;
+
 function setSessionCookie(c: Context<{ Bindings: Env; Variables: AuthedVars }>, token: string) {
-  setCookie(c, SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'Lax',
-    path: '/',
-    maxAge: SESSION_TTL_MS / 1000,
-  });
+  setCookie(c, SESSION_COOKIE, token, { ...SESSION_COOKIE_OPTS, maxAge: SESSION_TTL_MS / 1000 });
 }
 
 app.post('/signup', async (c) => {
@@ -62,13 +66,15 @@ app.post('/login', async (c) => {
 
 app.post('/logout', requireAuth, async (c) => {
   const token = getCookie(c, SESSION_COOKIE);
-  deleteCookie(c, SESSION_COOKIE, { path: '/' });
+  deleteCookie(c, SESSION_COOKIE, SESSION_COOKIE_OPTS);
   if (token) await deleteSession(c.env.DB, token);
   return c.json({ ok: true });
 });
 
 app.get('/me', requireAuth, async (c) => {
-  return c.json({ id: c.get('userId') });
+  const user = await getUserById(c.env.DB, c.get('userId'));
+  if (!user) return c.json({ error: '사용자를 찾을 수 없습니다' }, 404);
+  return c.json({ id: user.id, username: user.username });
 });
 
 export default app;
