@@ -10,10 +10,12 @@
 |---|---|---|
 | 멀티플레이 | **비동기 턴제 온라인** (체스닷컴 데일리 방식) | 실시간 동기화 부담 없이 PvP 성립 |
 | 서버 권위 | **전면 권위 서버** | 주사위·회피가 승패를 직접 좌우하므로 클라 신뢰 불가 |
-| 클라이언트 | **Phaser 3** + TypeScript + Vite | 전투 연출 |
-| 서버 | Node + Fastify + Prisma + Postgres | 규칙 엔진(TS)을 그대로 재사용 |
+| 클라이언트 | **Phaser 3** + TypeScript + Vite, GitHub Pages 배포 | 전투 연출, 별도 호스팅 비용 없음 |
+| 서버 | **Cloudflare Workers + Hono + D1 (SQLite) + Durable Objects** | 규칙 엔진(TS)을 그대로 재사용. 서버리스라 상시 프로세스·인프라 운영이 필요 없고, 무료 티어로 비동기 소규모 PvP를 감당한다 |
 | 패키지 관리 | pnpm 워크스페이스 모노레포 | 규칙 엔진을 클라·서버가 공유 |
 
+> `Node + Fastify + Prisma + Postgres`는 초기 검토안이었으나, 상시 서버 프로세스와 별도 DB 호스팅이 필요해 이 프로젝트 규모에는 과하다고 판단해 Cloudflare Workers 스택으로 교체했다. §4·§5는 이 결정을 반영한다.
+>
 > 현재 작업 폴더의 `HANDOFF.md`, `CondTable.cs`, `EffectTable.cs` 등은 **HIGH NUM**이라는 별개 Unity 프로젝트의 데이터 계층이다. 이 프로젝트와 코드·데이터를 공유하지 않는다.
 
 ---
@@ -35,7 +37,11 @@ turnchess/
 │  └─ src/__tests__/        #   Vitest
 ├─ packages/data/           # bases.json / skills.json + zod 스키마 + 예산 검증
 ├─ apps/web/                # Phaser 3 + Vite
-├─ apps/server/             # Fastify + Prisma + Postgres
+├─ apps/server/             # Cloudflare Workers + Hono + D1 + Durable Objects
+│  ├─ migrations/           #   D1 스키마 (wrangler d1 migrations)
+│  ├─ src/durable-objects/  #   MatchQueue — 매칭 큐 (§5.3)
+│  ├─ src/routes/           #   auth · decks · queue · matches
+│  └─ src/index.ts          #   Hono 앱 + scheduled() 24시간 타임아웃 스윕 (§8.4)
 └─ docs/                    # GDD.md, PLAN.md
 ```
 
@@ -76,7 +82,7 @@ rng → ap → state → movement → targeting → damage → actions → resol
 ### 4.1 이벤트 소싱
 
 - `match_actions`는 **append-only**.
-- 상태 = `초기 상태 + 액션 로그 리플레이`. N개마다 스냅샷 캐시.
+- 상태 = `초기 상태 + 액션 로그 리플레이`. `MatchState`가 작은 순수 JSON이라 **매 액션마다** `matches.state`에 스냅샷을 갱신한다 (N개마다 캐시하는 대신 매번 — 리플레이 버그 없이 GET을 O(1)로 유지한다). 액션 삽입과 스냅샷 갱신은 D1의 `batch()`로 원자적으로 묶는다.
 - 리플레이·관전·분쟁 검증이 부수적으로 따라온다.
 
 ### 4.2 권위 원칙
@@ -100,16 +106,21 @@ rng → ap → state → movement → targeting → damage → actions → resol
 | `POST /matches/:id/actions` | 액션 제출 |
 | `GET /decks`, `POST /decks` | 덱 CRUD (서버에서 예산 재검증) |
 
-### 4.4 테이블
+### 4.4 테이블 (D1)
 
-`users` · `decks` · `match_queue` · `matches` · `match_actions` · `match_snapshots`
+`users` · `sessions` · `decks` · `matches` · `match_actions` · `match_invites`
 
-```
-match_queue(
-  user_id       PK,          -- PK로 두어 중복 등록을 DB 레벨에서 차단
-  deck_snapshot jsonb,       -- 등록 시점의 덱 사본 (§5.2)
-  rating        int,
-  joined_at     timestamptz
+대기열은 테이블이 아니라 `MatchQueue` Durable Object의 인메모리 상태(+ DO storage 백업)로 관리한다 — 이유는 §5.3 참조. 스키마 원본은 `apps/server/migrations/0001_init.sql`.
+
+```sql
+matches(
+  id            TEXT PRIMARY KEY,
+  player_a      TEXT,             -- 역할 A
+  player_b      TEXT,             -- 역할 B
+  state         TEXT,             -- JSON MatchState 최신 스냅샷
+  action_count  INTEGER,
+  status        TEXT,             -- 'deploying' | 'battle' | 'finished' (인덱싱용 비정규화)
+  turn_deadline INTEGER           -- epoch ms, 24시간 제한시간 (§8.4)
 )
 ```
 
@@ -125,48 +136,42 @@ match_queue(
 - "상대 찾음 → 10초 안에 수락" 핸드셰이크가 필요 없고, 따라서 수락 거부(닷지) 페널티도 필요 없다.
 - 매칭 성사 = 양쪽 매치 목록에 새 매치가 생기는 것. 상대는 나중에 접속해서 발견한다.
 
-따라서 **큐 테이블 + 원자적 페어링**만으로 충분하다. 실시간 매치메이커 서버나 WebSocket 상시 연결이 필요 없다.
+따라서 **큐 상태 + 원자적 페어링**만으로 충분하다. 실시간 매치메이커 서버나 WebSocket 상시 연결이 필요 없다.
 
 ### 5.2 큐 등록 — `POST /queue { deckId }`
 
 1. **동시 진행 매치 상한 확인** — 기본 10개. 초과 시 거부한다. 비동기라 매치가 무한정 쌓일 수 있다.
 2. 덱 유효성 재검증 — 예산 30, 최대 6기물, 존재하는 베이스·스킬 ID.
-3. **덱을 스냅샷해서 큐 행에 저장한다.** 대기 중에 덱을 수정해도 등록된 큐에는 영향이 없다. "등록할 땐 A덱이었는데 매칭되니 B덱" 문제를 원천 차단한다.
-4. 페어링 시도(§5.3) → 성공하면 매치를 반환, 실패하면 큐에 넣고 대기 상태를 반환.
+3. **덱을 스냅샷해서 큐 등록 요청에 실어 보낸다.** 대기 중에 덱을 수정해도 이미 등록된 대기에는 영향이 없다. "등록할 땐 A덱이었는데 매칭되니 B덱" 문제를 원천 차단한다.
+4. 페어링 시도(§5.3) → 성공하면 매치를 반환, 실패하면 대기 상태를 반환.
 
-### 5.3 페어링 — 등록할 때 즉시 시도
+### 5.3 페어링 — Durable Object 단일 인스턴스
 
-새로 들어온 사람이 **기존 대기자를 집어가는** 방식. 별도 워커 없이 이것만으로 대부분 해결된다.
+D1(SQLite)에는 Postgres의 `SELECT ... FOR UPDATE SKIP LOCKED` 같은 행 잠금이 없다. 대신 **`MatchQueue`라는 이름의 Durable Object 인스턴스 하나**가 대기열 전체를 담당한다 (`apps/server/src/durable-objects/match-queue.ts`).
 
-```sql
-BEGIN;
+Durable Object의 핵심 성질: **같은 인스턴스로 들어오는 요청은 Workers 런타임이 순서대로, 하나씩만 처리한다.** 즉 큐 상태를 다루는 코드에 별도의 잠금·트랜잭션 없이도 아래가 자동으로 보장된다.
 
-SELECT * FROM match_queue
- WHERE user_id <> :me
-   AND user_id NOT IN (:최근_대전_상대)   -- 직전 상대 재매칭 회피
- ORDER BY joined_at ASC                   -- FIFO: 오래 기다린 사람 우선
- LIMIT 1
- FOR UPDATE SKIP LOCKED;                  -- ★ 핵심
-
--- 찾으면: 두 큐 행 DELETE + matches INSERT
--- 못 찾으면: 내 행 INSERT
-
-COMMIT;
+```
+join(me, deckSnapshot, lastOpponentId):
+  이미 대기 중이면 → 그 대기 상태를 그대로 반환 (중복 등록 무시, §8.4)
+  대기자 중 me가 아니고 lastOpponentId도 아닌 가장 오래 기다린 사람을 찾는다
+    있으면 → 그 사람을 대기열에서 제거하고 matches 테이블에 매치를 INSERT, 결과 반환
+    없으면 → me를 대기열에 추가, 대기 상태 반환
 ```
 
-`FOR UPDATE SKIP LOCKED`가 이 시스템의 핵심이다. A와 B가 동시에 등록하면서 둘 다 대기자 C를 집으려 할 때, 락을 잡지 못한 쪽은 C를 **건너뛰고** 다음 후보를 본다. 이게 없으면 C가 두 매치에 동시 편성되거나 트랜잭션이 서로 물려 대기한다.
+이 함수 본문이 실행되는 동안 다른 `join`/`leave` 요청은 큐에서 대기하다가 순서대로 실행된다. A와 B가 동시에 등록해 둘 다 대기자 C를 집으려는 경합, 빈 큐에 A와 B가 정확히 동시에 들어와 서로를 못 보는 경합(Postgres안이라면 별도 스위퍼가 필요했던 경우, §5.4 참조) 모두 **애초에 발생할 수 없는 상태**가 된다 — 순서가 나중인 요청은 이미 갱신된 큐 상태를 보고 실행되기 때문이다.
 
-### 5.4 스위퍼 — 안전망
+대기열 자체는 DO의 인메모리 Map으로 유지하고, DO storage에도 미러링해 인스턴스가 재활성화돼도 대기 목록이 유지되게 한다.
 
-큐가 빈 상태에서 A와 B가 **정확히 동시에** 등록하면, 둘 다 "대기자 없음"을 보고 각자 INSERT한다. 서로 매칭됐어야 할 두 명이 나란히 대기하게 된다. 드물지만 실제로 발생한다.
+### 5.4 스위퍼는 불필요
 
-→ **10초 주기 스위퍼**가 대기 목록을 FIFO로 훑어 짝을 지어 준다. §5.7의 레이팅 창 확장도 이 스위퍼가 담당한다.
+Postgres 설계안의 스위퍼는 "빈 큐에 둘이 동시에 들어와 서로를 못 보는" 경합을 뒤늦게 정리하기 위한 안전망이었다. §5.3의 DO 직렬 처리 위에서는 그 경합 자체가 존재하지 않으므로 스위퍼를 두지 않는다. §5.7(레이팅 매칭, M4)의 대기 창 확장이 필요해지면, DO에 [Alarm](https://developers.cloudflare.com/durable-objects/api/alarms/)을 걸어 주기적으로 큐를 훑는 방식으로 자연스럽게 대체한다.
 
 ### 5.5 매칭 성사 시
 
-하나의 트랜잭션 안에서 처리한다.
+`MatchQueue.join()` 한 호출 안에서 순서대로 처리한다 (§5.3의 직렬 실행이 곧 원자성을 보장한다).
 
-1. 두 큐 행 삭제
+1. 대기자 맵에서 상대방 제거
 2. `matches` 생성 — 양측 덱 스냅샷 복사, **매치 시드**(암호학적 난수) 생성, 상태 `deploying`
 3. **선공 결정** — 매치 시드로 양측 d20 굴림, 동점 시 재굴림
 4. 양측이 배치 단계로 진입
@@ -183,7 +188,7 @@ MVP는 FIFO만 쓴다. 레이팅 도입 시:
 
 - 단순 Elo (K=32), 신규 1200
 - 매칭 창: 시작 ±100 → 대기 30초마다 ±50 확장 → 5분 후 제한 해제
-- 창 확장 판정은 스위퍼(§5.4)가 담당한다
+- 창 확장 판정은 §5.4에서 언급한 DO Alarm이 담당한다
 
 ### 5.8 친구 대전
 
@@ -254,21 +259,20 @@ pnpm --filter rules sim -- --games 1000
 
 로컬 핫시트로 실제 1판 완주. dev 서버를 띄우고 브라우저에서 확인.
 
-### 8.4 매칭 시스템 (M3 — 동시성 테스트가 핵심)
+### 8.4 매칭 시스템 (M3)
 
-매칭 버그는 부하가 걸릴 때만 드러나므로 **반드시 동시 요청으로** 검증한다.
+Postgres 설계안이었다면 부하 상황의 동시 요청으로만 드러나는 버그(§5.3)를 걱정해야 했지만, `MatchQueue` DO는 요청을 순서대로만 처리하므로 그 경합 자체가 존재하지 않는다 (§5.3). 따라서 아래는 **동시에 쏴서** 검증하는 항목이 아니라, DO의 `join`/`leave` 로직이 각 시나리오를 순서대로 올바르게 처리하는지 확인하는 단위 테스트다 (`@cloudflare/vitest-pool-workers`로 DO를 직접 호출).
 
 | 테스트 | 방법 | 기대값 |
 |---|---|---|
-| 대량 동시 등록 | 빈 큐에 100개 계정이 `POST /queue` 동시 호출 | 정확히 50매치 생성, **한 계정이 두 매치에 편성되는 경우 0건**, 큐 잔여 0 |
-| 홀수 등록 | 101개 동시 등록 | 50매치 + 큐 잔여 정확히 1명 |
-| 대기자 쟁탈 | 대기자 1명 상태에서 2명이 동시 등록 | 1매치 생성 + 큐 잔여 1명 (`SKIP LOCKED` 동작 확인) |
-| 취소 경합 | 매칭 성사와 `DELETE /queue`를 동시 발생 | 에러 없이 매치가 반환됨 (§5.6 멱등성) |
-| 중복 등록 | 같은 계정이 두 번 `POST /queue` | 두 번째는 거부 또는 기존 대기 반환. 큐에 행 2개가 생기지 않음 |
-| 자기 자신 매칭 | 한 계정이 큐에 있는 상태에서 재등록 시도 | 자기 자신과 매칭되지 않음 |
+| 대량 등록 | 빈 큐에 100개 계정이 순서대로 `join` | 정확히 50매치 생성, **한 계정이 두 매치에 편성되는 경우 0건**, 대기열 잔여 0 |
+| 홀수 등록 | 101개 등록 | 50매치 + 대기열 잔여 정확히 1명 |
+| 취소 경합 | 매칭 성사 직후 같은 유저가 `leave` 호출 | 에러 없이 성사된 매치가 반환됨 (§5.6 멱등성) |
+| 중복 등록 | 같은 계정이 두 번 `join` | 두 번째는 기존 대기 상태를 그대로 반환. 대기열에 중복 항목이 생기지 않음 |
+| 자기 자신 매칭 | 한 계정이 대기 중인 상태에서 재등록 | 자기 자신과 매칭되지 않음 |
 | 덱 스냅샷 | 등록 후 덱 수정 → 매칭 | 매치에는 **등록 시점** 덱이 들어감 |
 | 매치 상한 | 활성 매치 10개인 계정이 등록 | 거부 |
-| 스위퍼 | 큐에 2명을 직접 INSERT (페어링 우회) | 10초 내 자동 페어링 |
+| 직전 상대 회피 | 대기자가 나의 직전 상대뿐인 상태에서 등록 | 다른 대기자가 없으면 그 사람과라도 매칭(기아 방지), 있으면 그 사람을 건너뜀 |
 
 ### 8.5 서버 일반 (M3)
 

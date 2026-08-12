@@ -1,0 +1,22 @@
+name = "tessera-server"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tessera-db"
+database_id = "1a93940d-f5d3-4a97-a553-5563261188a5"
+migrations_dir = "migrations"
+
+[[durable_objects.bindings]]
+name = "MATCH_QUEUE"
+class_name = "MatchQueue"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["MatchQueue"]
+
+[triggers]
+# 24시간 턴 제한시간 초과 매치를 정리한다 (GDD §8.4, PLAN §8.4).
+crons = ["*/15 * * * *"]

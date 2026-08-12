@@ -15,10 +15,10 @@
 | **M0** | `packages/rules` + `packages/data` — 규칙 엔진, 헤드리스 시뮬레이터 | 완료 |
 | **M1** | Phaser 로컬 핫시트 (한 브라우저에서 양측 플레이) | 완료 |
 | **M2** | 덱빌더 UI + 코스트 검증 | 완료 |
-| **M3** | 서버 · 인증 · 매칭 · 비동기 매치 | **미착수 — 백엔드 연결 예정** |
+| **M3** | 서버(`apps/server`) · 인증 · 매칭 · 비동기 매치 | **서버 구현 완료 — 클라이언트 연동(`RemoteBackend`) 대기** |
 | **M4** | 밸런싱 · 연출 · 사운드 · 알림 | 미착수 |
 
-온라인 대전 메뉴는 화면에 있지만 비활성이다. 지금 동작하는 것은 로컬 핫시트 한 판이다.
+온라인 대전 메뉴는 화면에 있지만 비활성이다. 지금 동작하는 것은 로컬 핫시트 한 판이다. `apps/server`는 Cloudflare Workers에 배포 가능한 상태지만, `apps/web`이 아직 `LocalBackend`만 쓰고 있어 온라인 대전은 화면에서 켜지지 않는다.
 
 ---
 
@@ -28,6 +28,7 @@
 packages/data/     bases.json · skills.json + zod 스키마 + 예산 검증 + 밸런스 상수
 packages/rules/    순수 TS 규칙 엔진 (외부 의존성 0) + Vitest + 헤드리스 시뮬레이터
 apps/web/          Phaser 3 + Vite 클라이언트
+apps/server/       Cloudflare Workers + Hono + D1 + Durable Objects (M3, PLAN §4·§5)
 docs/              GDD.md · PLAN.md
 ```
 
@@ -82,6 +83,18 @@ interface Backend {
 4. 액션 로그는 append-only로 쌓고, 상태 = `초기 상태 + 로그 리플레이`로 재구성한다. 엔진이 결정론적이라 이게 성립한다 (테스트로 보장).
 
 `LocalBackend`는 덱과 진행 중인 매치를 `localStorage`에 저장하므로, 새로고침해도 판이 이어진다.
+
+### `apps/server` — 위 계약을 지키는 원격 구현 (M3)
+
+Cloudflare Workers + Hono + D1(SQLite) + Durable Objects로 구현했다. 왜 이 스택인지, 매칭 큐를 왜 DB 대신 단일 Durable Object로 두었는지는 [PLAN.md §1](docs/PLAN.md)·[§5.3](docs/PLAN.md)에 있다.
+
+```bash
+pnpm --filter @tessera/server test         # vitest-pool-workers — 실제 D1 + Durable Object로 통합 테스트
+pnpm --filter @tessera/server dev          # wrangler dev (로컬)
+pnpm --filter @tessera/server deploy       # wrangler deploy
+```
+
+`apps/web`을 여기 붙이려면 위 `Backend` 인터페이스를 구현하는 `RemoteBackend`를 하나 추가하고, 로그인 화면과 매치 목록/대기열 UI를 이어 붙이면 된다 — 아직 안 한 부분이다.
 
 ---
 
