@@ -59,6 +59,6 @@ export const TERRAIN_BLOB_MIN_SIZE = 13;
 export const TERRAIN_BLOB_MAX_SIZE = 30;
 /** 한 매치에 등장하는 지형 종류 수 — 4종 중 이만큼만 무작위로 골라 등장시킨다. */
 export const TERRAIN_MAX_KINDS_PER_MATCH = 3;
-/** 배치 구역이 곧장 지형으로 뒤덮이지 않도록 씨앗은 중앙 대역(y 2~5)에서만 뽑는다. */
-export const TERRAIN_SEED_Y_MIN = 2;
-export const TERRAIN_SEED_Y_MAX = 5;
+/** 씨앗은 보드 전역에서 뽑는다 — 배치 구역도 지형 대상이다. */
+export const TERRAIN_SEED_Y_MIN = 0;
+export const TERRAIN_SEED_Y_MAX = 7;
