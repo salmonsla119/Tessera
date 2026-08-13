@@ -39,6 +39,10 @@ export function requireSkill(id: string): Skill {
 /** 덱빌딩에서 고를 수 있는 스킬 — 기본 공격은 무료 기본 보유이므로 선택 대상이 아니다. */
 export const SELECTABLE_SKILLS: readonly Skill[] = SKILLS.filter((s) => !s.innate);
 
+/** 계정 생성 시 가챠 없이 기본 지급되는 베이스/스킬 ID (신규 시스템 — 가챠). */
+export const STARTER_BASE_IDS: readonly string[] = BASES.filter((b) => b.starter).map((b) => b.id);
+export const STARTER_SKILL_IDS: readonly string[] = SKILLS.filter((s) => s.starter).map((s) => s.id);
+
 /**
  * 스킬 사거리 유형 (신규 시스템). 셋 중 하나로만 나눈다:
  * - `melee`: 근접 — 사거리 1, 스플래시 없음(단일 대상).

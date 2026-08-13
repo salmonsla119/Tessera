@@ -13,7 +13,9 @@
     "effect": null,
     "splashRadius": 0,
     "note": "전 기물 기본 보유",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": true
   },
   {
     "id": "cleave",
@@ -29,7 +31,9 @@
     "effect": null,
     "splashRadius": 0,
     "note": "",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": true
   },
   {
     "id": "pierce",
@@ -45,7 +49,9 @@
     "effect": null,
     "splashRadius": 0,
     "note": "직선상 첫 대상",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "arc",
@@ -61,7 +67,9 @@
     "effect": null,
     "splashRadius": 0,
     "note": "기물 통과(포물선)",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "bolt",
@@ -77,7 +85,9 @@
     "effect": null,
     "splashRadius": 0,
     "note": "",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": true
   },
   {
     "id": "hex",
@@ -97,7 +107,9 @@
     },
     "splashRadius": 0,
     "note": "대상 EVA −10 (2턴)",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "rend",
@@ -117,7 +129,9 @@
     },
     "splashRadius": 0,
     "note": "대상 SP −3",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "smite",
@@ -133,7 +147,9 @@
     "effect": null,
     "splashRadius": 0,
     "note": "",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "heal",
@@ -149,7 +165,9 @@
     "effect": null,
     "splashRadius": 0,
     "note": "아군 대상(자신 포함) — 회피 판정 없이 항상 적중",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": true
   },
   {
     "id": "mend",
@@ -165,7 +183,9 @@
     "effect": null,
     "splashRadius": 0,
     "note": "아군 대상(자신 포함) — 저비용 소량 회복",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "scorch",
@@ -185,7 +205,9 @@
     },
     "splashRadius": 0,
     "note": "대상 화상 (매 턴 2피해·3턴)",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "gash",
@@ -205,7 +227,9 @@
     },
     "splashRadius": 0,
     "note": "대상 출혈 (매 턴 2피해·3턴)",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "frostbite",
@@ -225,7 +249,9 @@
     },
     "splashRadius": 0,
     "note": "대상 빙결 (이동·공격·집중 불가) — 상태이상은 대상 턴 시작마다 줄어들어 최소 1턴은 보장된다",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "snipe",
@@ -241,7 +267,9 @@
     "effect": null,
     "splashRadius": 0,
     "note": "직선상 첫 대상 — 전 스킬 중 최장 사거리",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "barrage",
@@ -257,7 +285,9 @@
     "effect": null,
     "splashRadius": 0,
     "note": "",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "nova",
@@ -273,7 +303,9 @@
     "effect": null,
     "splashRadius": 1,
     "note": "근접 범위기 — 인접한 적을 내려쳐 반경 1칸 내 다른 적에게도 각자 회피 판정 후 데미지",
-    "buffTurns": 0
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "barrier",
@@ -289,6 +321,98 @@
     "effect": null,
     "splashRadius": 0,
     "buffTurns": 2,
-    "note": "아군 대상(자신 포함) — 회피 +15~25%p (2턴), 회피 상한 60%는 그대로 적용"
+    "note": "아군 대상(자신 포함) — 회피 +15~25%p (2턴), 회피 상한 60%는 그대로 적용",
+    "rarity": "common",
+    "starter": true
+  },
+  {
+    "id": "skewer",
+    "name": "찌르기",
+    "kind": "damage",
+    "minDamage": 4,
+    "maxDamage": 7,
+    "range": 1,
+    "shape": "orth",
+    "spCost": 3,
+    "cost": 2,
+    "innate": false,
+    "effect": null,
+    "splashRadius": 0,
+    "note": "직선 방향으로 찔러 넣는 안정적인 근접 공격 (변동폭이 작다)",
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": false
+  },
+  {
+    "id": "impale",
+    "name": "관철",
+    "kind": "damage",
+    "minDamage": 5,
+    "maxDamage": 9,
+    "range": 1,
+    "shape": "orth",
+    "spCost": 3,
+    "cost": 2,
+    "innate": false,
+    "effect": { "kind": "spDrain", "value": 2, "turns": 0 },
+    "splashRadius": 0,
+    "note": "찌르기의 상위 호환 — 대상 SP −2",
+    "buffTurns": 0,
+    "rarity": "rare",
+    "starter": false
+  },
+  {
+    "id": "quickshot",
+    "name": "속사",
+    "kind": "damage",
+    "minDamage": 2,
+    "maxDamage": 5,
+    "range": 3,
+    "shape": "all8",
+    "spCost": 3,
+    "cost": 2,
+    "innate": false,
+    "effect": null,
+    "splashRadius": 0,
+    "note": "",
+    "buffTurns": 0,
+    "rarity": "common",
+    "starter": false
+  },
+  {
+    "id": "deadeye",
+    "name": "정조준",
+    "kind": "damage",
+    "minDamage": 3,
+    "maxDamage": 7,
+    "range": 3,
+    "shape": "all8",
+    "spCost": 3,
+    "cost": 2,
+    "innate": false,
+    "effect": { "kind": "evaDown", "value": 8, "turns": 2 },
+    "splashRadius": 0,
+    "note": "속사의 상위 호환 — 대상 EVA −8 (2턴)",
+    "buffTurns": 0,
+    "rarity": "legendary",
+    "starter": false
+  },
+  {
+    "id": "wardguard",
+    "name": "수호결계",
+    "kind": "defense",
+    "minDamage": 18,
+    "maxDamage": 28,
+    "range": 1,
+    "shape": "adjacent",
+    "spCost": 3,
+    "cost": 2,
+    "innate": false,
+    "effect": null,
+    "splashRadius": 0,
+    "buffTurns": 2,
+    "note": "방벽의 상위 호환 — 아군 대상(자신 포함) 회피 +18~28%p (2턴), 회피 상한 60%는 그대로 적용",
+    "rarity": "rare",
+    "starter": false
   }
 ]

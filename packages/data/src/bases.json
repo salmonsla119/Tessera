@@ -10,7 +10,9 @@
     "eva": 10,
     "spd": 6,
     "cost": 3,
-    "passive": null
+    "passive": null,
+    "rarity": "common",
+    "starter": true
   },
   {
     "id": "lancer",
@@ -23,7 +25,9 @@
     "eva": 15,
     "spd": 9,
     "cost": 3,
-    "passive": null
+    "passive": null,
+    "rarity": "common",
+    "starter": true
   },
   {
     "id": "rider",
@@ -36,7 +40,9 @@
     "eva": 20,
     "spd": 12,
     "cost": 4,
-    "passive": null
+    "passive": null,
+    "rarity": "common",
+    "starter": true
   },
   {
     "id": "acolyte",
@@ -49,7 +55,9 @@
     "eva": 15,
     "spd": 8,
     "cost": 3,
-    "passive": null
+    "passive": null,
+    "rarity": "common",
+    "starter": true
   },
   {
     "id": "ranger",
@@ -62,7 +70,9 @@
     "eva": 25,
     "spd": 11,
     "cost": 4,
-    "passive": null
+    "passive": null,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "warlord",
@@ -75,7 +85,9 @@
     "eva": 20,
     "spd": 14,
     "cost": 6,
-    "passive": null
+    "passive": null,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "mystic",
@@ -88,7 +100,9 @@
     "eva": 20,
     "spd": 9,
     "cost": 3,
-    "passive": null
+    "passive": null,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "berserker",
@@ -101,7 +115,9 @@
     "eva": 8,
     "spd": 7,
     "cost": 4,
-    "passive": null
+    "passive": null,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "paladin",
@@ -114,7 +130,9 @@
     "eva": 12,
     "spd": 6,
     "cost": 5,
-    "passive": { "kind": "auraHeal", "radius": 1, "amount": 2 }
+    "passive": { "kind": "auraHeal", "radius": 1, "amount": 2 },
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "assassin",
@@ -127,7 +145,9 @@
     "eva": 30,
     "spd": 15,
     "cost": 4,
-    "passive": null
+    "passive": null,
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "shaman",
@@ -140,7 +160,9 @@
     "eva": 18,
     "spd": 9,
     "cost": 4,
-    "passive": { "kind": "statusImmune", "status": "freeze" }
+    "passive": { "kind": "statusImmune", "status": "freeze" },
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "templar",
@@ -153,7 +175,9 @@
     "eva": 14,
     "spd": 8,
     "cost": 5,
-    "passive": { "kind": "auraBuff", "radius": 1, "stat": "atk", "value": 2 }
+    "passive": { "kind": "auraBuff", "radius": 1, "stat": "atk", "value": 2 },
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "frostguard",
@@ -166,7 +190,9 @@
     "eva": 12,
     "spd": 7,
     "cost": 4,
-    "passive": { "kind": "terrainImmune", "terrain": "glacier" }
+    "passive": { "kind": "terrainImmune", "terrain": "glacier" },
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "swampstalker",
@@ -179,7 +205,9 @@
     "eva": 22,
     "spd": 10,
     "cost": 4,
-    "passive": { "kind": "terrainImmune", "terrain": "swamp" }
+    "passive": { "kind": "terrainImmune", "terrain": "swamp" },
+    "rarity": "common",
+    "starter": false
   },
   {
     "id": "pyromancer",
@@ -192,6 +220,83 @@
     "eva": 15,
     "spd": 10,
     "cost": 4,
-    "passive": { "kind": "statusImmune", "status": "burn" }
+    "passive": { "kind": "statusImmune", "status": "burn" },
+    "rarity": "common",
+    "starter": false
+  },
+  {
+    "id": "aegisguard",
+    "name": "수호기사",
+    "moveLabel": "8방향 1칸",
+    "move": { "kind": "ray", "dirs": "all8", "range": 1 },
+    "hp": 36,
+    "atk": 4,
+    "sp": 7,
+    "eva": 12,
+    "spd": 6,
+    "cost": 3,
+    "passive": null,
+    "rarity": "rare",
+    "starter": false
+  },
+  {
+    "id": "reaver",
+    "name": "약탈자",
+    "moveLabel": "L자 도약",
+    "move": { "kind": "jump", "dirs": "knight", "range": 1 },
+    "hp": 22,
+    "atk": 8,
+    "sp": 5,
+    "eva": 18,
+    "spd": 11,
+    "cost": 4,
+    "passive": null,
+    "rarity": "common",
+    "starter": false
+  },
+  {
+    "id": "warbringer",
+    "name": "전쟁군주",
+    "moveLabel": "L자 도약",
+    "move": { "kind": "jump", "dirs": "knight", "range": 1 },
+    "hp": 25,
+    "atk": 9,
+    "sp": 6,
+    "eva": 20,
+    "spd": 12,
+    "cost": 4,
+    "passive": { "kind": "auraBuff", "radius": 1, "stat": "atk", "value": 2 },
+    "rarity": "legendary",
+    "starter": false
+  },
+  {
+    "id": "oracle",
+    "name": "예언자",
+    "moveLabel": "대각 최대 2칸",
+    "move": { "kind": "ray", "dirs": "diag", "range": 2 },
+    "hp": 18,
+    "atk": 4,
+    "sp": 16,
+    "eva": 20,
+    "spd": 9,
+    "cost": 3,
+    "passive": { "kind": "statusImmune", "status": "freeze" },
+    "rarity": "rare",
+    "starter": false
+  },
+  {
+    "id": "duskblade",
+    "name": "황혼검",
+    "moveLabel": "직선 1칸",
+    "move": { "kind": "ray", "dirs": "orth", "range": 1 },
+    "hp": 20,
+    "atk": 6,
+    "sp": 6,
+    "eva": 20,
+    "spd": 10,
+    "cost": 3,
+    "passive": null,
+    "rarity": "common",
+    "starter": false
   }
 ]
