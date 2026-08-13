@@ -44,16 +44,19 @@ describe('지형 생성 (신규 시스템)', () => {
     expect(a).toEqual(b);
   });
 
-  it('배치 구역(A·B 자진 2열)에는 지형이 생기지 않는다', () => {
+  it('배치 구역(A·B 자진 2열)에도 지형이 생길 수 있다', () => {
     const deployCells = new Set(
       [...deployZoneCells('A'), ...deployZoneCells('B')].map((c) => `${c.x},${c.y}`),
     );
+    let sawDeployTerrain = false;
     for (let seed = 0; seed < 50; seed++) {
       const terrain = generateTerrain(createRng(seed));
-      for (const key of Object.keys(terrain)) {
-        expect(deployCells.has(key)).toBe(false);
+      if (Object.keys(terrain).some((key) => deployCells.has(key))) {
+        sawDeployTerrain = true;
+        break;
       }
     }
+    expect(sawDeployTerrain).toBe(true);
   });
 
   it('지형은 평지가 아닌 4종(늪지·숲·빙판·화염지대)만 나온다', () => {
@@ -77,7 +80,7 @@ describe('지형 생성 (신규 시스템)', () => {
     // 이미 차지한 칸을 덮어써 버리는 회귀를 잡기 위해 총 칸 수 기준으로도 확인한다.
     for (let seed = 0; seed < 20; seed++) {
       const terrain = generateTerrain(createRng(seed));
-      expect(Object.keys(terrain).length).toBeLessThanOrEqual(32); // 배치 구역을 뺀 보드 여유 칸 수
+      expect(Object.keys(terrain).length).toBeLessThanOrEqual(BOARD_SIZE * BOARD_SIZE); // 보드 전체 칸 수
     }
   });
 

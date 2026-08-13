@@ -7,16 +7,11 @@ import {
   TERRAIN_SEED_Y_MIN,
   type TerrainKind,
 } from '@tessera/data';
-import { DIRS_ORTH, coordKey, inBounds, isDeployZone } from './board';
+import { DIRS_ORTH, coordKey, inBounds } from './board';
 import { rollInt, type Rng } from './rng';
 import type { Coord, MatchState, PieceState } from './types';
 
 const CLUSTERED_TERRAIN: readonly TerrainKind[] = ['swamp', 'forest', 'glacier', 'scorched'];
-
-/** 배치 구역은 항상 평지다 — 배치 직후 첫 턴에 손도 못 써보고 지형 피해를 입는 걸 막는다. */
-function inAnyDeployZone(c: Coord): boolean {
-  return isDeployZone('A', c) || isDeployZone('B', c);
-}
 
 /**
  * 이번 매치에 등장할 지형 종류를 4종 중 TERRAIN_MAX_KINDS_PER_MATCH개만 무작위로 고른다
@@ -47,10 +42,13 @@ function pickSeed(rng: Rng, globalClaimed: ReadonlySet<string>): Coord | null {
  * 산발적으로 보이므로 이 방식을 쓴다. 매치의 시드 RNG를 그대로 이어 쓰므로 리플레이가
  * 결정론적이다 (createMatch가 첫 번째 굴림 이후 곧장 이 함수를 호출한다).
  *
- * 덩어리 크기는 13~30칸을 목표로 하지만, 배치 구역을 뺀 보드 여유 칸(8×8에서 양측 2열씩 뺀
- * 32칸)이 그보다 적으면 채울 수 있는 만큼만 채우고 멈춘다 — 서로 다른 종류끼리는 절대 겹치지
- * 않으므로(globalClaimed), 지형 3종을 동시에 최댓값(30칸)까지 채우는 건 애초에 산수상 불가능하다
- * (30×3 > 32). 뒤에 고른 종류일수록 남은 자리가 적어 작게, 또는 아예 등장하지 않을 수 있다.
+ * 지형은 배치 구역(rank 1~2, 7~8)에도 그대로 생길 수 있다 — 배치 시점부터 지형을 고려해
+ * 자리를 고르는 것도 전략의 일부로 본다.
+ *
+ * 덩어리 크기는 13~30칸을 목표로 하지만, 보드 전체 칸 수(64칸)가 그보다 적으면 채울 수 있는
+ * 만큼만 채우고 멈춘다 — 서로 다른 종류끼리는 절대 겹치지 않으므로(globalClaimed), 지형 3종을
+ * 동시에 최댓값(30칸)까지 채우는 건 애초에 산수상 빠듯하다(30×3 > 64는 아니지만 여유가 크지
+ * 않다). 뒤에 고른 종류일수록 남은 자리가 적어 작게, 또는 아예 등장하지 않을 수 있다.
  */
 export function generateTerrain(rng: Rng): Record<string, TerrainKind> {
   const terrain: Record<string, TerrainKind> = {};
@@ -71,7 +69,7 @@ export function generateTerrain(rng: Rng): Record<string, TerrainKind> {
       const idx = rollInt(rng, 0, frontier.length - 1);
       const cell = frontier[idx]!;
       const options = DIRS_ORTH.map((d) => ({ x: cell.x + d.x, y: cell.y + d.y })).filter(
-        (c) => inBounds(c) && !inAnyDeployZone(c) && !globalClaimed.has(coordKey(c)),
+        (c) => inBounds(c) && !globalClaimed.has(coordKey(c)),
       );
       if (options.length === 0) {
         frontier.splice(idx, 1);

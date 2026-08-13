@@ -70,6 +70,25 @@ export interface MatchDetail {
   actions: { seq: number; player: string; events: GameEvent[]; createdAt: number }[];
 }
 
+/** 계정 보유 현황 (신규 시스템 — 가챠). ID만 내려온다 — 이름/스탯은 @tessera/data에서 조회한다. */
+export interface Inventory {
+  currency: number;
+  bases: string[];
+  skills: string[];
+}
+
+export interface GachaPullResult {
+  item: { itemType: 'base' | 'skill'; itemId: string; rarity: 'common' | 'rare' | 'legendary' };
+  duplicate: boolean;
+  refund: number;
+  currency: number;
+}
+
+export interface MatchRewardResult {
+  granted: boolean;
+  currency: number;
+}
+
 export const api = {
   signup: (username: string, password: string) =>
     request<OnlineUser>('/auth/signup', { method: 'POST', body: JSON.stringify({ username, password }) }),
@@ -107,4 +126,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(action),
     }),
+
+  getInventory: () => request<Inventory>('/inventory'),
+  gachaPull: () => request<GachaPullResult>('/gacha/pull', { method: 'POST' }),
+  claimMatchReward: (mode: 'online' | 'local' | 'ai', matchId: string) =>
+    request<MatchRewardResult>('/rewards/match-complete', { method: 'POST', body: JSON.stringify({ mode, matchId }) }),
 };

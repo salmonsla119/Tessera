@@ -62,7 +62,9 @@ function autoDeploy(state: MatchState, player: PlayerId): Action {
 function chooseAction(state: MatchState, player: PlayerId, rand: () => number): Action {
   const actions = legalActions(state, player);
   const attacks = actions.filter((a) => a.type === 'attack');
-  const damageAttacks = attacks.filter((a) => a.type === 'attack' && requireSkill(a.skillId).kind !== 'heal');
+  // defense(방어) 스킬은 아군 대상이라 이 기대 데미지 계산에 넣을 수 없다 — 여기선 그냥 제외한다
+  // (베이스라인 AI라 방어 스킬을 적극적으로 쓰지는 않는다).
+  const damageAttacks = attacks.filter((a) => a.type === 'attack' && requireSkill(a.skillId).kind === 'damage');
   const healAttacks = attacks.filter((a) => a.type === 'attack' && requireSkill(a.skillId).kind === 'heal');
 
   if (damageAttacks.length > 0) {

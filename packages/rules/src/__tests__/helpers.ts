@@ -18,9 +18,18 @@ export function autoDeployAction(state: MatchState, player: PlayerId): Action {
   };
 }
 
-/** 배치까지 끝내고 전투 단계에 들어간 매치를 만든다. */
+/**
+ * 배치까지 끝내고 전투 단계에 들어간 매치를 만든다.
+ *
+ * 지형은 항상 걷어낸다 — 이 헬퍼를 쓰는 대부분의 테스트는 AP·데미지·상태이상 등 지형과
+ * 무관한 것을 보는데, 지형이 배치 구역까지 뒤덮을 수 있게 된 뒤로는 시드에 따라 기물이
+ * 배치되자마자 얼거나 화상을 입는 등 무관한 노이즈가 끼어들 수 있다. 지형 자체를 보는
+ * 테스트는 terrain.ts의 generateTerrain을 직접 부르거나 이 상태에 원하는 지형을 덮어쓴다.
+ */
 export function startedMatch(a: DeckSnapshot, b: DeckSnapshot, seed = 1): MatchState {
-  let state = createMatch(a, b, seed);
+  // 지형을 배치 전에 걷어내야 한다 — 두 번째 deploy가 곧장 startTurn()을 트리거하므로,
+  // 사후에 지형 맵만 비워서는 그사이 이미 걸린 빙결·화상 같은 상태이상까지는 못 지운다.
+  let state = { ...createMatch(a, b, seed), terrain: {} };
   state = applyAction(state, autoDeployAction(state, 'A')).state;
   state = applyAction(state, autoDeployAction(state, 'B')).state;
   return state;

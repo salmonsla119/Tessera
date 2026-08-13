@@ -1,6 +1,6 @@
 import basesRaw from './bases.json';
 import skillsRaw from './skills.json';
-import { BaseSchema, SkillSchema, type Base, type Skill, type Deck, type DeckPiece } from './schema';
+import { BaseSchema, SkillSchema, type Base, type Skill, type Deck, type DeckPiece, type Rarity } from './schema';
 import { DECK_BUDGET, MAX_PIECES } from './constants';
 
 export * from './schema';
@@ -38,6 +38,44 @@ export function requireSkill(id: string): Skill {
 
 /** 덱빌딩에서 고를 수 있는 스킬 — 기본 공격은 무료 기본 보유이므로 선택 대상이 아니다. */
 export const SELECTABLE_SKILLS: readonly Skill[] = SKILLS.filter((s) => !s.innate);
+
+/** 계정 생성 시 가챠 없이 기본 지급되는 베이스/스킬 ID (신규 시스템 — 가챠). */
+export const STARTER_BASE_IDS: readonly string[] = BASES.filter((b) => b.starter).map((b) => b.id);
+export const STARTER_SKILL_IDS: readonly string[] = SKILLS.filter((s) => s.starter).map((s) => s.id);
+
+/**
+ * 가챠 대상 (신규 시스템). 시작 지급 항목은 이미 전원이 보유하므로 가챠 풀에서 제외한다.
+ * 기본 공격(`basic`)은 애초에 덱빌딩에서 선택할 수 없는 무료 보유 스킬이라 풀에 넣지 않는다.
+ */
+export const GACHA_BASE_POOL: readonly Base[] = BASES.filter((b) => !b.starter);
+export const GACHA_SKILL_POOL: readonly Skill[] = SKILLS.filter((s) => !s.starter && !s.innate);
+
+export type GachaItemType = 'base' | 'skill';
+
+/** 가챠 대상을 등급별로 묶는다 — 실제 뽑기(랜덤 굴림)는 신뢰 가능한 난수가 필요해 서버에서만 한다. */
+export function gachaPoolByRarity(itemType: GachaItemType): Record<Rarity, readonly string[]> {
+  const pool = itemType === 'base' ? GACHA_BASE_POOL : GACHA_SKILL_POOL;
+  const result: Record<Rarity, string[]> = { common: [], rare: [], legendary: [] };
+  for (const item of pool) result[item.rarity].push(item.id);
+  return result;
+}
+
+/**
+ * 스킬 사거리 유형 (신규 시스템). 셋 중 하나로만 나눈다:
+ * - `melee`: 근접 — 사거리 1, 스플래시 없음(단일 대상).
+ * - `ranged`: 원거리 — 사거리 2칸 이상, 스플래시 없음(단일 대상).
+ * - `meleeArea`: 근접 범위기 — 사거리 1(붙어야 쓸 수 있다), 스플래시 있음(여러 대상).
+ *
+ * 값을 스킬 데이터에 별도로 저장하지 않고 range·splashRadius에서 그때그때 파생시킨다 —
+ * 표기가 실제 수치와 어긋나는 일을 원천 차단하기 위해서다. 이 세 유형에 맞지 않는 조합
+ * (예: 사거리가 먼 스플래시)은 애초에 skills.json 저작 시점에 만들지 않는다.
+ */
+export type SkillRangeCategory = 'melee' | 'ranged' | 'meleeArea';
+
+export function skillRangeCategory(skill: Skill): SkillRangeCategory {
+  if (skill.splashRadius > 0) return 'meleeArea';
+  return skill.range <= 1 ? 'melee' : 'ranged';
+}
 
 /** 기물 코스트 = 베이스 코스트 + 스킬 코스트 (GDD §7.1) */
 export function pieceCost(piece: DeckPiece): number {

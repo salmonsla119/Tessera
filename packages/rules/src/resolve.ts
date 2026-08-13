@@ -12,6 +12,7 @@ import {
   SUDDEN_DEATH_ROUND,
   SWAMP_DAMAGE,
   requireSkill,
+  type Skill,
   type SkillEffect,
   type TerrainKind,
 } from '@tessera/data';
@@ -23,7 +24,7 @@ import { auraHealTargets, isImmuneToStatus } from './passives';
 import { createRng, rollDie, type Rng } from './rng';
 import { cloneState, getPiece, livingPieces } from './state';
 import { isImmuneToTerrain, terrainAt } from './terrain';
-import type { Action, ApplyResult, GameEvent, MatchState, PieceState, PlayerId } from './types';
+import type { Action, ApplyResult, Coord, GameEvent, MatchState, PieceState, PlayerId } from './types';
 
 export class IllegalActionError extends Error {
   constructor(
@@ -111,7 +112,7 @@ function mustGet(state: MatchState, id: string): PieceState {
   return piece;
 }
 
-/** 'attack' 액션 하나가 damage 스킬이면 공격을, heal 스킬이면 치유를 수행한다 (신규 시스템). */
+/** 'attack' 액션 하나가 damage면 공격을, heal이면 치유를, defense면 회피 버프를 수행한다 (신규 시스템). */
 function resolveSkillUse(
   state: MatchState,
   casterId: string,
@@ -123,6 +124,8 @@ function resolveSkillUse(
   const skill = requireSkill(skillId);
   if (skill.kind === 'heal') {
     resolveHealUse(state, casterId, skill.id, targetId, rng, events);
+  } else if (skill.kind === 'defense') {
+    resolveDefenseUse(state, casterId, skill.id, targetId, rng, events);
   } else {
     resolveAttack(state, casterId, skill.id, targetId, rng, events);
   }
@@ -161,6 +164,43 @@ function resolveHealUse(
   events.push({ type: 'Healed', pieceId: target.id, amount: target.hp - before, hp: target.hp });
 }
 
+/**
+ * 방어 스킬 (신규 시스템) — 아군(자신 포함) 대상으로 회피(evaUp) 버프를 건다.
+ * minDamage~maxDamage로 굴린 값이 버프 크기, buffTurns가 지속 턴이다 — heal과 같은 굴림
+ * 방식(ATK·거리 감쇠·회피 판정 없음)을 그대로 재사용한다.
+ */
+function resolveDefenseUse(
+  state: MatchState,
+  casterId: string,
+  skillId: string,
+  targetId: string,
+  rng: Rng,
+  events: GameEvent[],
+): void {
+  const caster = mustGet(state, casterId);
+  const target = mustGet(state, targetId);
+  const skill = requireSkill(skillId);
+  const from = { ...caster.pos! };
+  const to = { ...target.pos! };
+
+  caster.sp -= skill.spCost;
+
+  const amount = resolveHeal(rng, skill);
+  events.push({
+    type: 'SkillUsed',
+    pieceId: caster.id,
+    skillId: skill.id,
+    targetId: target.id,
+    from,
+    to,
+    distance: chebyshev(from, to),
+    preview: { min: skill.minDamage, max: skill.maxDamage },
+  });
+
+  target.statuses.push({ kind: 'evaUp', value: amount, turnsLeft: skill.buffTurns });
+  events.push({ type: 'StatusApplied', pieceId: target.id, kind: 'evaUp', value: amount, turns: skill.buffTurns });
+}
+
 function resolveAttack(
   state: MatchState,
   attackerId: string,
@@ -195,19 +235,60 @@ function resolveAttack(
 
   if (result.evaded) {
     events.push({ type: 'Evaded', pieceId: target.id });
-    return;
+  } else {
+    target.hp = Math.max(0, target.hp - result.dealt);
+    events.push({ type: 'Damaged', pieceId: target.id, amount: result.dealt, hp: target.hp });
+
+    // 부가 효과는 명중했을 때만 적용된다 — 완전 회피는 공격 자체가 빗나간 것으로 본다.
+    if (skill.effect && target.alive) {
+      applyStatusOrDrain(target, skill.effect, events);
+    }
+
+    if (target.hp <= 0) killPiece(target, events);
   }
 
-  target.hp = Math.max(0, target.hp - result.dealt);
-  events.push({ type: 'Damaged', pieceId: target.id, amount: result.dealt, hp: target.hp });
-
-  // 부가 효과는 명중했을 때만 적용된다 — 완전 회피는 공격 자체가 빗나간 것으로 본다.
-  if (skill.effect && target.alive) {
-    applyStatusOrDrain(target, skill.effect, events);
+  // 범위 공격(신규 시스템) — 주 대상이 회피했어도 다른 적은 각자 따로 회피 판정을 받으므로 그대로 진행한다.
+  if (skill.splashRadius > 0) {
+    resolveSplash(state, attacker, target, skill, to, rng, events);
   }
 
-  if (target.hp <= 0) killPiece(target, events);
   checkVictory(state, events);
+}
+
+/**
+ * 스플래시 범위 공격 (신규 시스템). 적중 지점(주 대상이 서 있던 칸) 기준 반경 내 다른 적에게도
+ * 각자 회피 판정 후 데미지·부가효과를 적용한다. 거리 감쇠는 GDD §3.2와 동일하게 공격자 기준으로
+ * 계산한다 — 폭발 중심이 아니라 공격자로부터의 거리라는 기존 공식을 그대로 재사용한다.
+ */
+function resolveSplash(
+  state: MatchState,
+  attacker: PieceState,
+  primaryTarget: PieceState,
+  skill: Skill,
+  impact: Coord,
+  rng: Rng,
+  events: GameEvent[],
+): void {
+  const caught = livingPieces(state, opponentOf(attacker.owner)).filter(
+    (p) => p.id !== primaryTarget.id && p.pos !== null && chebyshev(impact, p.pos) <= skill.splashRadius,
+  );
+
+  for (const splashTarget of caught) {
+    const splashDistance = chebyshev(attacker.pos!, splashTarget.pos!);
+    const result = resolveDamage(rng, state, attacker, splashTarget, skill, splashDistance);
+    events.push({ type: 'DiceRolled', kind: 'damage', value: result.rolled, sides: 0 });
+    events.push({ type: 'DiceRolled', kind: 'evade', value: result.evadeRoll, sides: 100 });
+
+    if (result.evaded) {
+      events.push({ type: 'Evaded', pieceId: splashTarget.id });
+      continue;
+    }
+
+    splashTarget.hp = Math.max(0, splashTarget.hp - result.dealt);
+    events.push({ type: 'Damaged', pieceId: splashTarget.id, amount: result.dealt, hp: splashTarget.hp });
+    if (skill.effect && splashTarget.alive) applyStatusOrDrain(splashTarget, skill.effect, events);
+    if (splashTarget.hp <= 0) killPiece(splashTarget, events);
+  }
 }
 
 /** 스킬 부가효과 하나를 대상에게 적용한다. statusImmune 패시브는 상태이상만 막고 spDrain은 막지 않는다. */

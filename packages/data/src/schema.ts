@@ -11,8 +11,17 @@ export const MovePatternSchema = z.object({
 /** 지형 (신규 시스템 — GDD 미기재, 구현 결정 사항). `plain`은 평지(효과 없음)다. */
 export const TerrainKindSchema = z.enum(['plain', 'swamp', 'forest', 'glacier', 'scorched']);
 
-/** 상태이상 종류. `evaDown`·`burn`·`bleed`는 매 턴 값을 적용하고, `freeze`는 행동 자체를 막는다. */
-export const StatusKindSchema = z.enum(['evaDown', 'burn', 'bleed', 'freeze']);
+/**
+ * 등급 (신규 시스템 — 가챠). 같은 역할·코스트라도 등급이 높을수록 스탯이 조금 더 좋거나
+ * 패시브가 하나 더 붙는다. `starter`(계정 생성 시 기본 지급)는 전부 `common`이다.
+ */
+export const RaritySchema = z.enum(['common', 'rare', 'legendary']);
+
+/**
+ * 상태이상 종류. `evaDown`·`burn`·`bleed`는 매 턴 값을 적용하고, `freeze`는 행동 자체를 막는다.
+ * `evaUp`은 `evaDown`의 반대 방향(양수 보정)으로, 방어 스킬이 아군에게 거는 회피 버프다.
+ */
+export const StatusKindSchema = z.enum(['evaDown', 'burn', 'bleed', 'freeze', 'evaUp']);
 
 /**
  * 베이스 패시브 (신규 시스템). 기물마다 최대 1개.
@@ -45,6 +54,9 @@ export const BaseSchema = z.object({
   spd: z.number().int().min(0),
   cost: z.number().int().min(0),
   passive: PassiveSchema.nullable(),
+  rarity: RaritySchema,
+  /** 계정 생성 시 기본 지급 여부. `true`인 4종은 가챠 없이 처음부터 보유한다. */
+  starter: z.boolean(),
 });
 
 /** 사거리 형태 (GDD §6). `area`만 경로를 무시한다. */
@@ -57,8 +69,8 @@ export const SkillEffectSchema = z.object({
   turns: z.number().int().min(0),
 });
 
-/** `damage`는 적을, `heal`은 아군(자신 포함)을 대상으로 한다. */
-export const SkillKindSchema = z.enum(['damage', 'heal']);
+/** `damage`는 적을, `heal`·`defense`는 아군(자신 포함)을 대상으로 한다. */
+export const SkillKindSchema = z.enum(['damage', 'heal', 'defense']);
 
 export const SkillSchema = z.object({
   id: z.string().min(1),
@@ -72,7 +84,14 @@ export const SkillSchema = z.object({
   cost: z.number().int().min(0),
   innate: z.boolean(),
   effect: SkillEffectSchema.nullable(),
+  /** 0이면 단일 대상. 그 이상이면 적중 지점 기준 이 반경(체비셰프) 내 다른 적에게도 데미지·부가효과를 준다 (범위 공격, 신규 시스템). */
+  splashRadius: z.number().int().min(0),
+  /** `defense` 스킬 전용 — minDamage~maxDamage로 굴린 회피 버프(evaUp)가 지속되는 턴 수. 그 외 스킬은 0. */
+  buffTurns: z.number().int().min(0),
   note: z.string(),
+  rarity: RaritySchema,
+  /** 계정 생성 시 기본 지급 여부. `true`인 4종은 가챠 없이 처음부터 보유한다. */
+  starter: z.boolean(),
 });
 
 /** 기물 1개 = 베이스 1개 + 스킬 1개 (GDD §7.1). */
@@ -90,6 +109,7 @@ export const DeckSchema = z.object({
 export type MoveDirs = z.infer<typeof MoveDirsSchema>;
 export type MovePattern = z.infer<typeof MovePatternSchema>;
 export type TerrainKind = z.infer<typeof TerrainKindSchema>;
+export type Rarity = z.infer<typeof RaritySchema>;
 export type StatusKind = z.infer<typeof StatusKindSchema>;
 export type Passive = z.infer<typeof PassiveSchema>;
 export type Base = z.infer<typeof BaseSchema>;

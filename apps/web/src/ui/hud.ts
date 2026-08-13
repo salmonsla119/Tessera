@@ -1,6 +1,17 @@
-import { requireBase, type Skill, type TerrainKind } from '@tessera/data';
+import { requireBase, skillRangeCategory, type Skill, type SkillKind, type TerrainKind } from '@tessera/data';
 import { formatCarry, type DamageRange, type PieceState, type PlayerId } from '@tessera/rules';
-import { baseName, skillName, STATUS_COLOR, STATUS_LABEL, TERRAIN_LABEL, TERRAIN_NOTE } from '../game/theme';
+import {
+  baseName,
+  skillName,
+  SKILL_KIND_COLOR,
+  SKILL_KIND_LABEL,
+  SKILL_RANGE_COLOR,
+  SKILL_RANGE_LABEL,
+  STATUS_COLOR,
+  STATUS_LABEL,
+  TERRAIN_LABEL,
+  TERRAIN_NOTE,
+} from '../game/theme';
 import { delegate, esc, html } from './dom';
 
 export interface LogEntry {
@@ -37,6 +48,8 @@ export interface HudModel {
   selectedTerrain: TerrainKind | null;
   /** selected 베이스의 패시브 설명 — 없으면 null (신규 시스템). */
   selectedPassiveText: string | null;
+  /** 기물 없이 빈 칸만 클릭했을 때 그 칸의 지형 — 평지거나 기물을 보고 있으면 null (표시 개선). */
+  inspectedTerrain: TerrainKind | null;
   activeSkillId: string | null;
   usableSkills: Skill[];
   /** SP 부족으로 잠긴 편성 스킬 — 잠금 상태를 보여 주려고 따로 받는다. */
@@ -45,7 +58,7 @@ export interface HudModel {
   deployRemaining: number;
   /** 배치 화면 옆에 띄울 내 기물 목록 — 배치 단계가 아니면 빈 배열. */
   deployRoster: DeployRosterItem[];
-  preview: { targetName: string; range: DamageRange; distance: number; isHeal: boolean } | null;
+  preview: { targetName: string; range: DamageRange; distance: number; kind: SkillKind } | null;
   log: LogEntry[];
 }
 
@@ -167,7 +180,13 @@ export class Hud {
   private selectedBlock(model: HudModel): string {
     const piece = model.selected;
     if (!piece) {
-      return `<div class="hud-block"><p class="muted" style="margin:0">기물을 선택하세요.</p></div>`;
+      if (model.inspectedTerrain && model.inspectedTerrain !== 'plain') {
+        return `<div class="hud-block">
+          <strong>${esc(TERRAIN_LABEL[model.inspectedTerrain])}</strong>
+          <p class="muted" style="margin:8px 0 0;font-size:13px">${esc(TERRAIN_NOTE[model.inspectedTerrain])}</p>
+        </div>`;
+      }
+      return `<div class="hud-block"><p class="muted" style="margin:0">기물이나 지형을 클릭하세요.</p></div>`;
     }
 
     const base = requireBase(piece.baseId);
@@ -176,10 +195,20 @@ export class Hud {
 
     const skillButtons = model.usableSkills
       .map((skill) => {
-        const amount = `${skill.kind === 'heal' ? '+' : ''}${skill.minDamage}~${skill.maxDamage}`;
+        const amount =
+          skill.kind === 'damage'
+            ? `${skill.minDamage}~${skill.maxDamage}`
+            : skill.kind === 'heal'
+              ? `+${skill.minDamage}~${skill.maxDamage}`
+              : `+${skill.minDamage}~${skill.maxDamage}%`;
+        const splash = skill.splashRadius > 0 ? ` · 범위 R${skill.splashRadius}` : '';
+        const rangeCategory = skillRangeCategory(skill);
         return `<button data-skill="${esc(skill.id)}" class="${model.activeSkillId === skill.id ? 'active' : ''}">
-          <span>${esc(skill.name)} <span class="muted" style="color:${skill.kind === 'heal' ? 'var(--ok)' : ''}">${amount}</span></span>
-          <span class="cost">사거리 ${skill.range} · SP ${skill.spCost}</span>
+          <span>${esc(skill.name)}
+            <span class="tag" style="color:${SKILL_KIND_COLOR[skill.kind]}">${SKILL_KIND_LABEL[skill.kind]}</span>
+            <span class="tag" style="color:${SKILL_RANGE_COLOR[rangeCategory]}">${SKILL_RANGE_LABEL[rangeCategory]}</span>
+            <span class="muted" style="color:${skill.kind === 'damage' ? '' : SKILL_KIND_COLOR[skill.kind]}">${amount}</span></span>
+          <span class="cost">사거리 ${skill.range} · SP ${skill.spCost}${splash}</span>
         </button>`;
       })
       .join('');
@@ -192,15 +221,20 @@ export class Hud {
       : '';
 
     const preview = model.preview
-      ? model.preview.isHeal
+      ? model.preview.kind === 'heal'
         ? `<div class="notice" style="margin-top:10px;border-color:var(--ok);background:rgba(74,222,128,.1);color:#bdf5cf">
              ${esc(model.preview.targetName)} ·
              예상 회복량 <strong class="mono">+${model.preview.range.min}~${model.preview.range.max}</strong>
            </div>`
-        : `<div class="notice" style="margin-top:10px;border-color:var(--accent);background:rgba(110,168,254,.1);color:#cfe0ff">
-             ${esc(model.preview.targetName)} · 거리 ${model.preview.distance} ·
-             예상 <strong class="mono">${model.preview.range.min}~${model.preview.range.max}</strong>
-           </div>`
+        : model.preview.kind === 'defense'
+          ? `<div class="notice" style="margin-top:10px;border-color:var(--accent);background:rgba(110,168,254,.1);color:#cfe0ff">
+               ${esc(model.preview.targetName)} ·
+               예상 회피 증가 <strong class="mono">+${model.preview.range.min}~${model.preview.range.max}%</strong>
+             </div>`
+          : `<div class="notice" style="margin-top:10px;border-color:var(--accent);background:rgba(110,168,254,.1);color:#cfe0ff">
+               ${esc(model.preview.targetName)} · 거리 ${model.preview.distance} ·
+               예상 <strong class="mono">${model.preview.range.min}~${model.preview.range.max}</strong>
+             </div>`
       : '';
 
     const terrainTag =
@@ -241,7 +275,7 @@ export class Hud {
         piece.statuses.length > 0
           ? `<div style="margin-top:8px">${piece.statuses
               .map((s) => {
-                const suffix = s.kind === 'freeze' ? '' : ` −${s.value}`;
+                const suffix = s.kind === 'freeze' ? '' : s.kind === 'evaUp' ? ` +${s.value}` : ` −${s.value}`;
                 return `<span class="tag" style="color:${STATUS_COLOR[s.kind]}">${esc(STATUS_LABEL[s.kind])}${suffix} (${s.turnsLeft}턴)</span>`;
               })
               .join(' ')}</div>`

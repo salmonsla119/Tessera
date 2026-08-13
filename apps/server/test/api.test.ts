@@ -1,3 +1,4 @@
+import { GACHA_PULL_COST, MATCH_REWARD_CURRENCY, STARTER_BASE_IDS, STARTER_CURRENCY, STARTER_SKILL_IDS } from '@tessera/data';
 import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 
@@ -31,9 +32,11 @@ const DECK_A_PIECES = [
   { baseId: 'guard', skillId: 'cleave' },
   { baseId: 'lancer', skillId: 'bolt' },
 ];
+// 시작 지급 4베이스(guard/lancer/rider/acolyte) + 4스킬(cleave/bolt/heal/barrier)만 쓴다 —
+// 새로 가입한 테스트 계정은 가챠로 뽑지 않는 한 이 조합만 보유하고 있다.
 const DECK_B_PIECES = [
-  { baseId: 'acolyte', skillId: 'hex' },
-  { baseId: 'ranger', skillId: 'rend' },
+  { baseId: 'acolyte', skillId: 'heal' },
+  { baseId: 'rider', skillId: 'barrier' },
 ];
 
 describe('auth', () => {
@@ -196,5 +199,100 @@ describe('queue + match flow', () => {
 
     const res = await SELF.fetch(`http://server/matches/${matchId}`, { headers: { cookie: eve.cookie } });
     expect(res.status).toBe(403);
+  });
+});
+
+describe('가챠 / 인벤토리 (신규 시스템)', () => {
+  it('계정 생성 시 시작 재화와 시작 지급 4베이스/4스킬을 보유한다', async () => {
+    const { cookie } = await signup('gacha_newbie');
+    const res = await SELF.fetch('http://server/inventory', { headers: { cookie } });
+    expect(res.status).toBe(200);
+    const inv = await res.json<{ currency: number; bases: string[]; skills: string[] }>();
+
+    expect(inv.currency).toBe(STARTER_CURRENCY);
+    expect([...inv.bases].sort()).toEqual([...STARTER_BASE_IDS].sort());
+    expect([...inv.skills].sort()).toEqual([...STARTER_SKILL_IDS].sort());
+  });
+
+  it('보유하지 않은 베이스/스킬이 섞인 덱은 거부한다', async () => {
+    const { cookie } = await signup('gacha_cheater');
+    const res = await SELF.fetch('http://server/decks', {
+      method: 'POST',
+      headers: { cookie },
+      // ranger/rend는 시작 지급 목록에 없다 — 가챠로 뽑지 않는 한 소유할 수 없다.
+      body: JSON.stringify({ name: 'unowned', pieces: [{ baseId: 'ranger', skillId: 'rend' }] }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('가챠 1회는 재화를 차감하고 항목을 보유 목록에 추가한다', async () => {
+    const { cookie } = await signup('gacha_puller');
+    const res = await SELF.fetch('http://server/gacha/pull', { method: 'POST', headers: { cookie } });
+    expect(res.status).toBe(200);
+    const pull = await res.json<{ item: { itemType: string; itemId: string }; duplicate: boolean; currency: number }>();
+
+    // 시작 지급 항목은 가챠 풀에서 원천 제외되므로 첫 뽑기는 중복일 수 없다.
+    expect(pull.duplicate).toBe(false);
+    expect(pull.currency).toBe(STARTER_CURRENCY - GACHA_PULL_COST);
+
+    const inv = await (await SELF.fetch('http://server/inventory', { headers: { cookie } })).json<{
+      bases: string[];
+      skills: string[];
+    }>();
+    const owned = pull.item.itemType === 'base' ? inv.bases : inv.skills;
+    expect(owned).toContain(pull.item.itemId);
+  });
+
+  it('재화가 부족하면 가챠 뽑기를 거부한다', async () => {
+    const { cookie } = await signup('gacha_broke');
+    // 중복 항목은 절반을 환급하므로 잔액이 정확히 0으로 떨어진다는 보장이 없다 —
+    // 잔액을 직접 추적하며 더 못 뽑을 때까지 반복한다.
+    let currency = STARTER_CURRENCY;
+    let guard = 0;
+    while (currency >= GACHA_PULL_COST && guard++ < 200) {
+      const res = await SELF.fetch('http://server/gacha/pull', { method: 'POST', headers: { cookie } });
+      expect(res.status).toBe(200);
+      currency = (await res.json<{ currency: number }>()).currency;
+    }
+    expect(currency).toBeLessThan(GACHA_PULL_COST);
+
+    const overdrawn = await SELF.fetch('http://server/gacha/pull', { method: 'POST', headers: { cookie } });
+    expect(overdrawn.status).toBe(400);
+  });
+
+  it('로컬/AI 매치 완료 보상은 같은 키로 한 번만 지급된다', async () => {
+    const { cookie } = await signup('reward_player');
+    const claim = (matchId: string) =>
+      SELF.fetch('http://server/rewards/match-complete', {
+        method: 'POST',
+        headers: { cookie },
+        body: JSON.stringify({ mode: 'local', matchId }),
+      });
+
+    const first = await claim('local-match-1');
+    expect(first.status).toBe(200);
+    const firstBody = await first.json<{ granted: boolean; currency: number }>();
+    expect(firstBody.granted).toBe(true);
+    expect(firstBody.currency).toBe(STARTER_CURRENCY + MATCH_REWARD_CURRENCY);
+
+    const second = await claim('local-match-1');
+    const secondBody = await second.json<{ granted: boolean; currency: number }>();
+    expect(secondBody.granted).toBe(false);
+    expect(secondBody.currency).toBe(STARTER_CURRENCY + MATCH_REWARD_CURRENCY);
+
+    const third = await claim('local-match-2');
+    const thirdBody = await third.json<{ granted: boolean; currency: number }>();
+    expect(thirdBody.granted).toBe(true);
+    expect(thirdBody.currency).toBe(STARTER_CURRENCY + MATCH_REWARD_CURRENCY * 2);
+  });
+
+  it('존재하지 않는 온라인 매치의 보상 청구는 거부한다', async () => {
+    const { cookie } = await signup('reward_faker');
+    const res = await SELF.fetch('http://server/rewards/match-complete', {
+      method: 'POST',
+      headers: { cookie },
+      body: JSON.stringify({ mode: 'online', matchId: 'not-a-real-match' }),
+    });
+    expect(res.status).toBe(404);
   });
 });

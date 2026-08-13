@@ -5,12 +5,21 @@ import {
   SELECTABLE_SKILLS,
   requireBase,
   requireSkill,
+  skillRangeCategory,
   validateDeck,
   type DeckPiece,
 } from '@tessera/data';
 import { accrueAp } from '@tessera/rules';
 import type { StoredDeck } from '../backend/types';
-import { describePassive } from '../game/theme';
+import {
+  describePassive,
+  RARITY_COLOR,
+  RARITY_LABEL,
+  SKILL_KIND_COLOR,
+  SKILL_KIND_LABEL,
+  SKILL_RANGE_COLOR,
+  SKILL_RANGE_LABEL,
+} from '../game/theme';
 import { $, delegate, esc, html } from './dom';
 
 const SHAPE_LABEL: Record<string, string> = {
@@ -34,14 +43,25 @@ function apPreview(teamSpeed: number): string {
   return turns.join(' · ');
 }
 
+/**
+ * 온라인 덱빌더에서만 넘어온다 — 보유하지 않은 베이스/스킬은 고를 수 없게 잠근다.
+ * 로컬/AI 핫시트 덱빌더는 계정이 필요 없으므로 이 게이트를 건너뛴다(넘기지 않으면 전부 보유한 것으로 취급).
+ */
+export interface Ownership {
+  bases: ReadonlySet<string>;
+  skills: ReadonlySet<string>;
+}
+
 export function renderDeckBuilder(
   container: HTMLElement,
-  options: { deck: StoredDeck; onSave: (deck: StoredDeck) => void; onCancel: () => void },
+  options: { deck: StoredDeck; ownership?: Ownership; onSave: (deck: StoredDeck) => void; onCancel: () => void },
 ): void {
   let name = options.deck.name;
   let pieces: DeckPiece[] = options.deck.pieces.map((p) => ({ ...p }));
-  let selectedBase = BASES[0]!.id;
-  let selectedSkill = SELECTABLE_SKILLS[0]!.id;
+  const ownsBase = (id: string) => !options.ownership || options.ownership.bases.has(id);
+  const ownsSkill = (id: string) => !options.ownership || options.ownership.skills.has(id);
+  let selectedBase = (BASES.find((b) => ownsBase(b.id)) ?? BASES[0]!).id;
+  let selectedSkill = (SELECTABLE_SKILLS.find((s) => ownsSkill(s.id)) ?? SELECTABLE_SKILLS[0]!).id;
 
   html(
     container,
@@ -84,29 +104,43 @@ export function renderDeckBuilder(
   const rosterEl = $(container, '#roster');
   const summaryEl = $(container, '#summary');
 
+  function rarityTag(rarity: keyof typeof RARITY_LABEL): string {
+    return `<span class="tag" style="color:${RARITY_COLOR[rarity]}">${RARITY_LABEL[rarity]}</span>`;
+  }
+
   function renderBases(): void {
     html(
       basesEl,
-      `<thead><tr><th>이름</th><th>이동</th><th>HP</th><th>ATK</th><th>SP</th><th>EVA</th><th>SPD</th><th>C</th><th>패시브</th></tr></thead>
-       <tbody>${BASES.map(
-         (b) => `<tr data-base="${b.id}" class="${b.id === selectedBase ? 'selected' : ''}">
-            <td>${esc(b.name)}</td><td class="muted" style="font-size:11px">${esc(b.moveLabel)}</td>
+      `<thead><tr><th>이름</th><th>등급</th><th>이동</th><th>HP</th><th>ATK</th><th>SP</th><th>EVA</th><th>SPD</th><th>C</th><th>패시브</th></tr></thead>
+       <tbody>${BASES.map((b) => {
+         const locked = !ownsBase(b.id);
+         return `<tr data-base="${b.id}" class="${b.id === selectedBase ? 'selected' : ''} ${locked ? 'locked' : ''}">
+            <td>${esc(b.name)}${locked ? ' <span class="muted" style="font-size:11px">🔒 미보유</span>' : ''}</td>
+            <td>${rarityTag(b.rarity)}</td>
+            <td class="muted" style="font-size:11px">${esc(b.moveLabel)}</td>
             <td>${b.hp}</td><td>${b.atk}</td><td>${b.sp}</td><td>${b.eva}</td><td>${b.spd}</td><td>${b.cost}</td>
             <td class="muted" style="font-size:11px;text-align:left">${b.passive ? esc(describePassive(b.passive)) : '—'}</td>
-          </tr>`,
-       ).join('')}</tbody>`,
+          </tr>`;
+       }).join('')}</tbody>`,
     );
   }
 
   function renderSkills(): void {
     html(
       skillsEl,
-      `<thead><tr><th>이름</th><th>데미지/회복</th><th>사거리</th><th>형태</th><th>SP</th><th>C</th></tr></thead>
+      `<thead><tr><th>이름</th><th>등급</th><th>종류</th><th>유형</th><th>데미지/회복</th><th>사거리</th><th>형태</th><th>SP</th><th>C</th></tr></thead>
        <tbody>${SELECTABLE_SKILLS.map((s) => {
-         const amount = `${s.kind === 'heal' ? '+' : ''}${s.minDamage}~${s.maxDamage}`;
-         return `<tr data-skill="${s.id}" class="${s.id === selectedSkill ? 'selected' : ''}">
-            <td>${esc(s.name)}${s.note ? `<div class="muted" style="font-size:11px">${esc(s.note)}</div>` : ''}</td>
-            <td style="color:${s.kind === 'heal' ? 'var(--ok)' : ''}">${amount}</td><td>${s.range}</td>
+         const amount =
+           s.kind === 'damage' ? `${s.minDamage}~${s.maxDamage}` : `+${s.minDamage}~${s.maxDamage}${s.kind === 'defense' ? '%' : ''}`;
+         const category = skillRangeCategory(s);
+         const splash = s.splashRadius > 0 ? ` (R${s.splashRadius})` : '';
+         const locked = !ownsSkill(s.id);
+         return `<tr data-skill="${s.id}" class="${s.id === selectedSkill ? 'selected' : ''} ${locked ? 'locked' : ''}">
+            <td>${esc(s.name)}${locked ? ' <span class="muted" style="font-size:11px">🔒 미보유</span>' : ''}${s.note ? `<div class="muted" style="font-size:11px">${esc(s.note)}</div>` : ''}</td>
+            <td>${rarityTag(s.rarity)}</td>
+            <td><span class="tag" style="color:${SKILL_KIND_COLOR[s.kind]}">${SKILL_KIND_LABEL[s.kind]}</span></td>
+            <td><span class="tag" style="color:${SKILL_RANGE_COLOR[category]}">${SKILL_RANGE_LABEL[category]}${splash}</span></td>
+            <td style="color:${s.kind === 'damage' ? '' : SKILL_KIND_COLOR[s.kind]}">${amount}</td><td>${s.range}</td>
             <td>${esc(SHAPE_LABEL[s.shape] ?? s.shape)}</td><td>${s.spCost}</td><td>${s.cost}</td>
           </tr>`;
        }).join('')}</tbody>`,
@@ -181,11 +215,13 @@ export function renderDeckBuilder(
   }
 
   delegate(basesEl, 'tr[data-base]', (row) => {
+    if (!ownsBase(row.dataset.base!)) return;
     selectedBase = row.dataset.base!;
     renderBases();
   });
 
   delegate(skillsEl, 'tr[data-skill]', (row) => {
+    if (!ownsSkill(row.dataset.skill!)) return;
     selectedSkill = row.dataset.skill!;
     renderSkills();
   });

@@ -1,4 +1,13 @@
-import { getBase, getSkill, type Passive, type StatusKind, type TerrainKind } from '@tessera/data';
+import {
+  getBase,
+  getSkill,
+  type Passive,
+  type Rarity,
+  type SkillKind,
+  type SkillRangeCategory,
+  type StatusKind,
+  type TerrainKind,
+} from '@tessera/data';
 import type { PlayerId } from '@tessera/rules';
 
 export const CELL = 66;
@@ -13,6 +22,7 @@ export const COLORS = {
   moveHint: 0x4ade80,
   attackHint: 0xf87171,
   healHint: 0x4ade80,
+  defenseHint: 0x6ea8fe,
   selected: 0x6ea8fe,
   deployZone: 0x6ea8fe,
   playerA: 0x4c8dff,
@@ -52,6 +62,7 @@ export const STATUS_LABEL: Record<StatusKind, string> = {
   burn: '화상',
   bleed: '출혈',
   freeze: '빙결',
+  evaUp: '회피 증가',
 };
 
 export const STATUS_COLOR: Record<StatusKind, string> = {
@@ -59,6 +70,46 @@ export const STATUS_COLOR: Record<StatusKind, string> = {
   burn: '#ff8f4d',
   bleed: '#ff5d6c',
   freeze: '#7dd3fc',
+  evaUp: '#6ea8fe',
+};
+
+/** 스킬 사거리 유형 표기 (신규 시스템). */
+export const SKILL_RANGE_LABEL: Record<SkillRangeCategory, string> = {
+  melee: '근접',
+  ranged: '원거리',
+  meleeArea: '근접범위',
+};
+
+export const SKILL_RANGE_COLOR: Record<SkillRangeCategory, string> = {
+  melee: '#f87171',
+  ranged: '#6ea8fe',
+  meleeArea: '#fbbf24',
+};
+
+/** 스킬 종류(공격/회복/방어) 표기 (신규 시스템). */
+export const SKILL_KIND_LABEL: Record<SkillKind, string> = {
+  damage: '공격',
+  heal: '회복',
+  defense: '방어',
+};
+
+export const SKILL_KIND_COLOR: Record<SkillKind, string> = {
+  damage: '#f87171',
+  heal: '#4ade80',
+  defense: '#6ea8fe',
+};
+
+/** 등급 표기 (신규 시스템 — 가챠). */
+export const RARITY_LABEL: Record<Rarity, string> = {
+  common: '일반',
+  rare: '희귀',
+  legendary: '전설',
+};
+
+export const RARITY_COLOR: Record<Rarity, string> = {
+  common: '#9aa5b8',
+  rare: '#6ea8fe',
+  legendary: '#fbbf24',
 };
 
 /** 패시브를 사람이 읽는 한 줄 설명으로 바꾼다 (신규 시스템). */
@@ -77,28 +128,6 @@ export function describePassive(passive: Passive): string {
 
 export function ownerColor(owner: PlayerId): number {
   return owner === 'A' ? COLORS.playerA : COLORS.playerB;
-}
-
-const SHORT_LABEL: Record<string, string> = {
-  guard: '방',
-  lancer: '창',
-  rider: '기',
-  acolyte: '사',
-  ranger: '순',
-  warlord: '장',
-  mystic: '주',
-  berserker: '광',
-  paladin: '성',
-  assassin: '자',
-  shaman: '토',
-  templar: '단',
-  frostguard: '서',
-  swampstalker: '늪',
-  pyromancer: '화',
-};
-
-export function pieceLabel(baseId: string): string {
-  return SHORT_LABEL[baseId] ?? '?';
 }
 
 export function baseName(baseId: string): string {

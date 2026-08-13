@@ -1,12 +1,14 @@
 import Phaser from 'phaser';
 import type { StatusKind } from '@tessera/data';
 import type { Coord, GameEvent, MatchState, PieceState, PlayerId } from '@tessera/rules';
-import { BOARD_PX, CELL, COLORS, PAD, STATUS_COLOR, TERRAIN_COLORS, ownerColor, pieceLabel, toCell, toPixel } from './theme';
+import { drawBaseGlyph } from './glyphs';
+import { BOARD_PX, CELL, COLORS, PAD, STATUS_COLOR, TERRAIN_COLORS, ownerColor, toCell, toPixel } from './theme';
 
 export interface Highlights {
   move?: Coord[];
   attack?: Coord[];
   heal?: Coord[];
+  defense?: Coord[];
   deploy?: Coord[];
   selected?: Coord | null;
 }
@@ -14,6 +16,7 @@ export interface Highlights {
 interface PieceView {
   container: Phaser.GameObjects.Container;
   body: Phaser.GameObjects.Arc;
+  glyph: Phaser.GameObjects.Graphics;
   hpFill: Phaser.GameObjects.Rectangle;
   spFill: Phaser.GameObjects.Rectangle;
   statusBadges: Phaser.GameObjects.Arc[];
@@ -181,28 +184,24 @@ export class BoardScene extends Phaser.Scene {
   private createView(piece: PieceState): PieceView {
     const color = ownerColor(piece.owner);
     const body = this.add.circle(0, 0, BODY_RADIUS, 0x151922).setStrokeStyle(2.5, color);
-    const label = this.add
-      .text(0, -3, pieceLabel(piece.baseId), {
-        fontFamily: "'Noto Sans KR', sans-serif",
-        fontSize: '19px',
-        color: '#e6e9f0',
-      })
-      .setOrigin(0.5);
+    const glyph = this.add.graphics();
 
     const hpBg = this.add.rectangle(0, BODY_RADIUS + 6, BAR_WIDTH, 5, COLORS.hpBarBg);
     const hpFill = this.add.rectangle(-BAR_WIDTH / 2, BODY_RADIUS + 6, BAR_WIDTH, 5, COLORS.hpBar).setOrigin(0, 0.5);
     const spBg = this.add.rectangle(0, BODY_RADIUS + 12, BAR_WIDTH, 3, COLORS.hpBarBg);
     const spFill = this.add.rectangle(-BAR_WIDTH / 2, BODY_RADIUS + 12, BAR_WIDTH, 3, COLORS.spBar).setOrigin(0, 0.5);
 
-    const container = this.add.container(0, 0, [body, label, hpBg, hpFill, spBg, spFill]).setDepth(10);
-    const view: PieceView = { container, body, hpFill, spFill, statusBadges: [] };
+    const container = this.add.container(0, 0, [body, glyph, hpBg, hpFill, spBg, spFill]).setDepth(10);
+    const view: PieceView = { container, body, glyph, hpFill, spFill, statusBadges: [] };
     this.views.set(piece.id, view);
     return view;
   }
 
   private updateView(view: PieceView, piece: PieceState, viewer?: PlayerId): void {
     const hidden = viewer !== undefined && piece.owner !== viewer && piece.baseId === 'hidden';
-    view.body.setStrokeStyle(2.5, hidden ? COLORS.hidden : ownerColor(piece.owner));
+    const color = hidden ? COLORS.hidden : ownerColor(piece.owner);
+    view.body.setStrokeStyle(2.5, color);
+    drawBaseGlyph(view.glyph, piece.baseId, color);
     view.hpFill.width = BAR_WIDTH * Math.max(0, piece.hp / piece.maxHp);
     view.spFill.width = BAR_WIDTH * (piece.maxSp === 0 ? 0 : Math.max(0, piece.sp / piece.maxSp));
     this.updateStatusBadges(view, piece);
@@ -248,6 +247,12 @@ export class BoardScene extends Phaser.Scene {
     for (const cell of h.heal ?? []) {
       const { px, py } = toPixel(cell.x, cell.y);
       g.lineStyle(3, COLORS.healHint, 0.9);
+      g.strokeRect(px - CELL / 2 + 2, py - CELL / 2 + 2, CELL - 4, CELL - 4);
+    }
+
+    for (const cell of h.defense ?? []) {
+      const { px, py } = toPixel(cell.x, cell.y);
+      g.lineStyle(3, COLORS.defenseHint, 0.9);
       g.strokeRect(px - CELL / 2 + 2, py - CELL / 2 + 2, CELL - 4, CELL - 4);
     }
 
@@ -533,6 +538,8 @@ function statusFloatText(kind: StatusKind, value: number): string {
   switch (kind) {
     case 'evaDown':
       return `회피 −${value}`;
+    case 'evaUp':
+      return `회피 +${value}`;
     case 'burn':
       return '화상!';
     case 'bleed':
