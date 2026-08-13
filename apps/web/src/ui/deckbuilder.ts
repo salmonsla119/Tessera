@@ -44,8 +44,8 @@ function apPreview(teamSpeed: number): string {
 }
 
 /**
- * 온라인 덱빌더에서만 넘어온다 — 보유하지 않은 베이스/스킬은 고를 수 없게 잠근다.
- * 로컬/AI 핫시트 덱빌더는 계정이 필요 없으므로 이 게이트를 건너뛴다(넘기지 않으면 전부 보유한 것으로 취급).
+ * 편성 가능한 베이스/스킬 (신규 시스템 — 가챠). 로컬/AI 덱빌더도 이제 넘긴다 — 로그인 상태면
+ * 계정의 실제 인벤토리, 아니면 시작 지급 4+4종만 보유한 것으로 취급한다(app.ts `fetchOwnership()`).
  */
 export interface Ownership {
   bases: ReadonlySet<string>;
@@ -62,6 +62,7 @@ export function renderDeckBuilder(
   const ownsSkill = (id: string) => !options.ownership || options.ownership.skills.has(id);
   let selectedBase = (BASES.find((b) => ownsBase(b.id)) ?? BASES[0]!).id;
   let selectedSkill = (SELECTABLE_SKILLS.find((s) => ownsSkill(s.id)) ?? SELECTABLE_SKILLS[0]!).id;
+  const hasLocked = BASES.some((b) => !ownsBase(b.id)) || SELECTABLE_SKILLS.some((s) => !ownsSkill(s.id));
 
   html(
     container,
@@ -70,6 +71,7 @@ export function renderDeckBuilder(
         <div>
           <h1>덱 편성</h1>
           <p>기물 1개 = 베이스 1개 + 스킬 1개. 최대 ${MAX_PIECES}기물, 총 예산 ${DECK_BUDGET}코스트.</p>
+          ${hasLocked ? '<p class="muted" style="font-size:12px">🔒 잠긴 항목은 온라인 대전에 로그인한 뒤 가챠로 획득해야 편성할 수 있습니다.</p>' : ''}
         </div>
         <div class="row">
           <button data-act="cancel" class="ghost">취소</button>

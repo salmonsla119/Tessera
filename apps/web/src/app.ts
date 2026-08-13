@@ -1,4 +1,4 @@
-import { validateDeck } from '@tessera/data';
+import { STARTER_BASE_IDS, STARTER_SKILL_IDS, validateDeck } from '@tessera/data';
 import type { DeckSnapshot } from '@tessera/rules';
 import { AiMatchBackend } from './ai/backend';
 import { AI_DECK_PIECES, createAiPlayer, DIFFICULTY_LABEL, type Difficulty } from './ai/policy';
@@ -55,10 +55,10 @@ export class App {
       mount(this.screens),
       { decks, resumable: this.backend.resumableMatchId() !== null },
       {
-        onNewDeck: () => this.showDeckBuilder({ id: uid('deck'), name: '새 덱', pieces: [] }),
+        onNewDeck: () => void this.showLocalDeckBuilder({ id: uid('deck'), name: '새 덱', pieces: [] }),
         onEditDeck: (id) => {
           const deck = decks.find((d) => d.id === id);
-          if (deck) this.showDeckBuilder(deck);
+          if (deck) void this.showLocalDeckBuilder(deck);
         },
         onDeleteDeck: (id) => void this.deleteDeck(id),
         onLoadPresets: () => void this.loadPresets(),
@@ -84,6 +84,25 @@ export class App {
       onSave: (saved) => void onSave(saved),
       onCancel,
     });
+  }
+
+  /**
+   * 편성 가능한 베이스/스킬 집합 (신규 시스템 — 가챠). 로컬 핫시트·AI 대전도 온라인과 똑같은
+   * 게이트를 적용한다 — 계정 없이 즐기던 예전 방식과 달리, 이제 시작 지급 4+4종을 넘는 콘텐츠는
+   * 항상 (로그인한) 계정의 실제 인벤토리를 봐야만 풀린다. 로그인하지 않았거나 서버가 없으면
+   * 시작 지급 목록만 보유한 것으로 취급해, 최소한 기본 로스터로는 계속 플레이할 수 있게 한다.
+   */
+  private async fetchOwnership(): Promise<Ownership> {
+    if (onlineEnabled()) {
+      const inventory = await api.getInventory().catch(() => null);
+      if (inventory) return { bases: new Set(inventory.bases), skills: new Set(inventory.skills) };
+    }
+    return { bases: new Set(STARTER_BASE_IDS), skills: new Set(STARTER_SKILL_IDS) };
+  }
+
+  private async showLocalDeckBuilder(deck: StoredDeck): Promise<void> {
+    const ownership = await this.fetchOwnership();
+    this.showDeckBuilder(deck, undefined, undefined, ownership);
   }
 
   private async saveDeck(deck: StoredDeck): Promise<void> {
@@ -281,11 +300,8 @@ export class App {
   private async showOnlineDeckBuilder(deck: StoredDeck): Promise<void> {
     this.stopLobbyPoll();
     // 온라인 덱은 서버가 소유권을 재검증하므로(§ "가챠 게이트의 기준", README) 여기서도 같은
-    // 인벤토리로 미리 걸러 준다 — 로컬/AI 핫시트 덱빌더는 이 인자를 넘기지 않아 게이트가 없다.
-    const inventory = await api.getInventory().catch(() => null);
-    const ownership: Ownership | undefined = inventory
-      ? { bases: new Set(inventory.bases), skills: new Set(inventory.skills) }
-      : undefined;
+    // 인벤토리로 미리 걸러 준다 — 로컬/AI 핫시트와 동일한 fetchOwnership()을 그대로 쓴다.
+    const ownership = await this.fetchOwnership();
 
     this.showDeckBuilder(
       deck,
