@@ -24,6 +24,7 @@ import type { Backend, MatchView } from './backend/types';
 import { maskState } from './backend/types';
 import { BoardScene } from './game/BoardScene';
 import { BOARD_PX, baseName, describePassive, skillName, STATUS_LABEL } from './game/theme';
+import { api, onlineEnabled } from './online/api';
 import { Hud, type HudModel, type LogEntry } from './ui/hud';
 import { showModal } from './ui/modal';
 
@@ -449,7 +450,19 @@ export class MatchController {
     }
   }
 
+  /**
+   * 매치 1판 완료 보상 청구 (신규 시스템 — 가챠). 모드 무관하게 지급하므로 로컬/AI 대전도
+   * 포함한다. 서버 계정이 없거나 로그인 상태가 아니면 서버가 401로 거부하는데, 이 UI는 굳이
+   * 로그인 여부를 미리 알 필요가 없어 실패를 조용히 무시한다 — 실패해도 게임 진행에는 영향 없음.
+   */
+  private async claimMatchReward(): Promise<void> {
+    if (!onlineEnabled()) return;
+    const mode = this.backend.kind === 'remote' ? 'online' : (this.backend.kind as 'local' | 'ai');
+    await api.claimMatchReward(mode, this.matchId).catch(() => undefined);
+  }
+
   private async showResult(): Promise<void> {
+    void this.claimMatchReward();
     const winner = this.state.winner;
     const title =
       winner === 'draw'

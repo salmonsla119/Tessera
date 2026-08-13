@@ -2,6 +2,7 @@ import {
   getBase,
   getSkill,
   type Passive,
+  type Rarity,
   type SkillKind,
   type SkillRangeCategory,
   type StatusKind,
@@ -98,6 +99,19 @@ export const SKILL_KIND_COLOR: Record<SkillKind, string> = {
   defense: '#6ea8fe',
 };
 
+/** 등급 표기 (신규 시스템 — 가챠). */
+export const RARITY_LABEL: Record<Rarity, string> = {
+  common: '일반',
+  rare: '희귀',
+  legendary: '전설',
+};
+
+export const RARITY_COLOR: Record<Rarity, string> = {
+  common: '#9aa5b8',
+  rare: '#6ea8fe',
+  legendary: '#fbbf24',
+};
+
 /** 패시브를 사람이 읽는 한 줄 설명으로 바꾼다 (신규 시스템). */
 export function describePassive(passive: Passive): string {
   switch (passive.kind) {
@@ -132,6 +146,11 @@ const SHORT_LABEL: Record<string, string> = {
   frostguard: '서',
   swampstalker: '늪',
   pyromancer: '화',
+  aegisguard: '수',
+  reaver: '약',
+  warbringer: '전',
+  oracle: '예',
+  duskblade: '황',
 };
 
 export function pieceLabel(baseId: string): string {

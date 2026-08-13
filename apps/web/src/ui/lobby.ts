@@ -12,6 +12,7 @@ export interface LobbyState {
 export interface LobbyHandlers {
   onLogout: () => void;
   onBack: () => void;
+  onGacha: () => void;
   onNewDeck: () => void;
   onEditDeck: (id: string) => void;
   onDeleteDeck: (id: string) => void;
@@ -46,6 +47,7 @@ export function renderLobby(container: HTMLElement, state: LobbyState, handlers:
         </div>
         <div class="row">
           <button data-act="back" class="ghost">메뉴로</button>
+          <button data-act="gacha">가챠</button>
           <button data-act="logout" class="ghost danger">로그아웃</button>
         </div>
       </div>
@@ -152,6 +154,9 @@ export function renderLobby(container: HTMLElement, state: LobbyState, handlers:
         break;
       case 'logout':
         handlers.onLogout();
+        break;
+      case 'gacha':
+        handlers.onGacha();
         break;
       case 'new-deck':
         handlers.onNewDeck();

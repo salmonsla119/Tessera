@@ -305,6 +305,15 @@ table.data tr.selected {
   background: rgba(110, 168, 254, 0.14);
 }
 
+table.data tr.locked {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+table.data tr.locked:hover {
+  background: none;
+}
+
 .roster {
   display: grid;
   gap: 8px;

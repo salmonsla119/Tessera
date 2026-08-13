@@ -10,7 +10,8 @@ import { RemoteBackend } from './online/backend';
 import { PRESET_DECKS } from './presets';
 import { mount, uid } from './ui/dom';
 import { renderAuth } from './ui/auth';
-import { renderDeckBuilder } from './ui/deckbuilder';
+import { renderDeckBuilder, type Ownership } from './ui/deckbuilder';
+import { renderGacha } from './ui/gacha';
 import { renderLobby } from './ui/lobby';
 import { renderMenu } from './ui/menu';
 import { showModal } from './ui/modal';
@@ -70,10 +71,16 @@ export class App {
     );
   }
 
-  private showDeckBuilder(deck: StoredDeck, onSave: SaveDeckFn = (d) => this.saveDeck(d), onCancel: () => void = () => void this.showMenu()): void {
+  private showDeckBuilder(
+    deck: StoredDeck,
+    onSave: SaveDeckFn = (d) => this.saveDeck(d),
+    onCancel: () => void = () => void this.showMenu(),
+    ownership?: Ownership,
+  ): void {
     this.setScreen('screens');
     renderDeckBuilder(mount(this.screens), {
       deck,
+      ownership,
       onSave: (saved) => void onSave(saved),
       onCancel,
     });
@@ -242,12 +249,13 @@ export class App {
       {
         onBack: () => void this.showMenu(),
         onLogout: () => void this.logout(),
-        onNewDeck: () => this.showOnlineDeckBuilder({ id: uid('deck'), name: '새 덱', pieces: [] }),
+        onNewDeck: () => void this.showOnlineDeckBuilder({ id: uid('deck'), name: '새 덱', pieces: [] }),
         onEditDeck: (id) => {
           const deck = decks.find((d) => d.id === id);
-          if (deck) this.showOnlineDeckBuilder(deck);
+          if (deck) void this.showOnlineDeckBuilder(deck);
         },
         onDeleteDeck: (id) => void this.deleteOnlineDeck(id),
+        onGacha: () => void this.showGachaScreen(),
         onJoinQueue: (deckId) => void this.joinQueue(deckId),
         onLeaveQueue: () => void this.leaveQueue(),
         onEnterMatch: (matchId) => void this.enterOnlineMatch(matchId),
@@ -270,8 +278,15 @@ export class App {
     await this.renderLobbyScreen();
   }
 
-  private showOnlineDeckBuilder(deck: StoredDeck): void {
+  private async showOnlineDeckBuilder(deck: StoredDeck): Promise<void> {
     this.stopLobbyPoll();
+    // 온라인 덱은 서버가 소유권을 재검증하므로(§ "가챠 게이트의 기준", README) 여기서도 같은
+    // 인벤토리로 미리 걸러 준다 — 로컬/AI 핫시트 덱빌더는 이 인자를 넘기지 않아 게이트가 없다.
+    const inventory = await api.getInventory().catch(() => null);
+    const ownership: Ownership | undefined = inventory
+      ? { bases: new Set(inventory.bases), skills: new Set(inventory.skills) }
+      : undefined;
+
     this.showDeckBuilder(
       deck,
       async (saved) => {
@@ -279,6 +294,7 @@ export class App {
         await this.renderLobbyScreen();
       },
       () => void this.renderLobbyScreen(),
+      ownership,
     );
   }
 
@@ -356,6 +372,28 @@ export class App {
       { fixedViewer: detail.role, pollMs: 4000 },
       () => void this.renderLobbyScreen(),
     );
+  }
+
+  private async showGachaScreen(): Promise<void> {
+    this.stopLobbyPoll();
+    const inventory = await api.getInventory().catch(() => null);
+    if (!inventory) {
+      await this.notifyError(null);
+      return;
+    }
+
+    this.setScreen('screens');
+    renderGacha(mount(this.screens), inventory, {
+      onBack: () => void this.renderLobbyScreen(),
+      onPull: async () => {
+        try {
+          return await api.gachaPull();
+        } catch (error) {
+          await this.notifyError(error);
+          return null;
+        }
+      },
+    });
   }
 
   private async notifyError(error: unknown): Promise<void> {
