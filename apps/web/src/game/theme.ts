@@ -1,4 +1,12 @@
-import { getBase, getSkill, type Passive, type SkillRangeCategory, type StatusKind, type TerrainKind } from '@tessera/data';
+import {
+  getBase,
+  getSkill,
+  type Passive,
+  type SkillKind,
+  type SkillRangeCategory,
+  type StatusKind,
+  type TerrainKind,
+} from '@tessera/data';
 import type { PlayerId } from '@tessera/rules';
 
 export const CELL = 66;
@@ -13,6 +21,7 @@ export const COLORS = {
   moveHint: 0x4ade80,
   attackHint: 0xf87171,
   healHint: 0x4ade80,
+  defenseHint: 0x6ea8fe,
   selected: 0x6ea8fe,
   deployZone: 0x6ea8fe,
   playerA: 0x4c8dff,
@@ -52,6 +61,7 @@ export const STATUS_LABEL: Record<StatusKind, string> = {
   burn: '화상',
   bleed: '출혈',
   freeze: '빙결',
+  evaUp: '회피 증가',
 };
 
 export const STATUS_COLOR: Record<StatusKind, string> = {
@@ -59,6 +69,7 @@ export const STATUS_COLOR: Record<StatusKind, string> = {
   burn: '#ff8f4d',
   bleed: '#ff5d6c',
   freeze: '#7dd3fc',
+  evaUp: '#6ea8fe',
 };
 
 /** 스킬 사거리 유형 표기 (신규 시스템). */
@@ -72,6 +83,19 @@ export const SKILL_RANGE_COLOR: Record<SkillRangeCategory, string> = {
   melee: '#f87171',
   ranged: '#6ea8fe',
   meleeArea: '#fbbf24',
+};
+
+/** 스킬 종류(공격/회복/방어) 표기 (신규 시스템). */
+export const SKILL_KIND_LABEL: Record<SkillKind, string> = {
+  damage: '공격',
+  heal: '회복',
+  defense: '방어',
+};
+
+export const SKILL_KIND_COLOR: Record<SkillKind, string> = {
+  damage: '#f87171',
+  heal: '#4ade80',
+  defense: '#6ea8fe',
 };
 
 /** 패시브를 사람이 읽는 한 줄 설명으로 바꾼다 (신규 시스템). */

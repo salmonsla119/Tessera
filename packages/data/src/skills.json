@@ -12,7 +12,8 @@
     "innate": true,
     "effect": null,
     "splashRadius": 0,
-    "note": "전 기물 기본 보유"
+    "note": "전 기물 기본 보유",
+    "buffTurns": 0
   },
   {
     "id": "cleave",
@@ -27,7 +28,8 @@
     "innate": false,
     "effect": null,
     "splashRadius": 0,
-    "note": ""
+    "note": "",
+    "buffTurns": 0
   },
   {
     "id": "pierce",
@@ -42,7 +44,8 @@
     "innate": false,
     "effect": null,
     "splashRadius": 0,
-    "note": "직선상 첫 대상"
+    "note": "직선상 첫 대상",
+    "buffTurns": 0
   },
   {
     "id": "arc",
@@ -57,7 +60,8 @@
     "innate": false,
     "effect": null,
     "splashRadius": 0,
-    "note": "기물 통과(포물선)"
+    "note": "기물 통과(포물선)",
+    "buffTurns": 0
   },
   {
     "id": "bolt",
@@ -72,7 +76,8 @@
     "innate": false,
     "effect": null,
     "splashRadius": 0,
-    "note": ""
+    "note": "",
+    "buffTurns": 0
   },
   {
     "id": "hex",
@@ -85,9 +90,14 @@
     "spCost": 4,
     "cost": 3,
     "innate": false,
-    "effect": { "kind": "evaDown", "value": 10, "turns": 2 },
+    "effect": {
+      "kind": "evaDown",
+      "value": 10,
+      "turns": 2
+    },
     "splashRadius": 0,
-    "note": "대상 EVA −10 (2턴)"
+    "note": "대상 EVA −10 (2턴)",
+    "buffTurns": 0
   },
   {
     "id": "rend",
@@ -100,9 +110,14 @@
     "spCost": 6,
     "cost": 4,
     "innate": false,
-    "effect": { "kind": "spDrain", "value": 3, "turns": 0 },
+    "effect": {
+      "kind": "spDrain",
+      "value": 3,
+      "turns": 0
+    },
     "splashRadius": 0,
-    "note": "대상 SP −3"
+    "note": "대상 SP −3",
+    "buffTurns": 0
   },
   {
     "id": "smite",
@@ -117,7 +132,8 @@
     "innate": false,
     "effect": null,
     "splashRadius": 0,
-    "note": ""
+    "note": "",
+    "buffTurns": 0
   },
   {
     "id": "heal",
@@ -132,7 +148,8 @@
     "innate": false,
     "effect": null,
     "splashRadius": 0,
-    "note": "아군 대상(자신 포함) — 회피 판정 없이 항상 적중"
+    "note": "아군 대상(자신 포함) — 회피 판정 없이 항상 적중",
+    "buffTurns": 0
   },
   {
     "id": "mend",
@@ -147,7 +164,8 @@
     "innate": false,
     "effect": null,
     "splashRadius": 0,
-    "note": "아군 대상(자신 포함) — 저비용 소량 회복"
+    "note": "아군 대상(자신 포함) — 저비용 소량 회복",
+    "buffTurns": 0
   },
   {
     "id": "scorch",
@@ -160,9 +178,14 @@
     "spCost": 4,
     "cost": 3,
     "innate": false,
-    "effect": { "kind": "burn", "value": 2, "turns": 3 },
+    "effect": {
+      "kind": "burn",
+      "value": 2,
+      "turns": 3
+    },
     "splashRadius": 0,
-    "note": "대상 화상 (매 턴 2피해·3턴)"
+    "note": "대상 화상 (매 턴 2피해·3턴)",
+    "buffTurns": 0
   },
   {
     "id": "gash",
@@ -175,9 +198,14 @@
     "spCost": 3,
     "cost": 2,
     "innate": false,
-    "effect": { "kind": "bleed", "value": 2, "turns": 3 },
+    "effect": {
+      "kind": "bleed",
+      "value": 2,
+      "turns": 3
+    },
     "splashRadius": 0,
-    "note": "대상 출혈 (매 턴 2피해·3턴)"
+    "note": "대상 출혈 (매 턴 2피해·3턴)",
+    "buffTurns": 0
   },
   {
     "id": "frostbite",
@@ -190,9 +218,14 @@
     "spCost": 4,
     "cost": 3,
     "innate": false,
-    "effect": { "kind": "freeze", "value": 0, "turns": 2 },
+    "effect": {
+      "kind": "freeze",
+      "value": 0,
+      "turns": 2
+    },
     "splashRadius": 0,
-    "note": "대상 빙결 (이동·공격·집중 불가) — 상태이상은 대상 턴 시작마다 줄어들어 최소 1턴은 보장된다"
+    "note": "대상 빙결 (이동·공격·집중 불가) — 상태이상은 대상 턴 시작마다 줄어들어 최소 1턴은 보장된다",
+    "buffTurns": 0
   },
   {
     "id": "snipe",
@@ -207,7 +240,8 @@
     "innate": false,
     "effect": null,
     "splashRadius": 0,
-    "note": "직선상 첫 대상 — 전 스킬 중 최장 사거리"
+    "note": "직선상 첫 대상 — 전 스킬 중 최장 사거리",
+    "buffTurns": 0
   },
   {
     "id": "barrage",
@@ -222,7 +256,8 @@
     "innate": false,
     "effect": null,
     "splashRadius": 0,
-    "note": ""
+    "note": "",
+    "buffTurns": 0
   },
   {
     "id": "nova",
@@ -237,6 +272,23 @@
     "innate": false,
     "effect": null,
     "splashRadius": 1,
-    "note": "근접 범위기 — 인접한 적을 내려쳐 반경 1칸 내 다른 적에게도 각자 회피 판정 후 데미지"
+    "note": "근접 범위기 — 인접한 적을 내려쳐 반경 1칸 내 다른 적에게도 각자 회피 판정 후 데미지",
+    "buffTurns": 0
+  },
+  {
+    "id": "barrier",
+    "name": "방벽",
+    "kind": "defense",
+    "minDamage": 15,
+    "maxDamage": 25,
+    "range": 1,
+    "shape": "adjacent",
+    "spCost": 3,
+    "cost": 2,
+    "innate": false,
+    "effect": null,
+    "splashRadius": 0,
+    "buffTurns": 2,
+    "note": "아군 대상(자신 포함) — 회피 +15~25%p (2턴), 회피 상한 60%는 그대로 적용"
   }
 ]

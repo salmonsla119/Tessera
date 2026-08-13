@@ -123,6 +123,7 @@ export function effectiveEva(state: MatchState, piece: PieceState): number {
   let eva = piece.baseEva;
   for (const status of piece.statuses) {
     if (status.kind === 'evaDown') eva -= status.value;
+    if (status.kind === 'evaUp') eva += status.value;
   }
   if (piece.pos) {
     const terrain = terrainAt(state, piece.pos);

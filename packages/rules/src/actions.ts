@@ -82,10 +82,10 @@ export function checkAction(state: MatchState, action: Action): Legality {
       if (!target) return no(`알 수 없는 대상: ${action.targetId}`);
       if (!target.alive || target.pos === null) return no('이미 전사한 대상입니다');
 
-      // damage 스킬은 적만, heal 스킬은 아군(자신 포함)만 대상이 된다 (신규 시스템).
+      // damage 스킬은 적만, heal·defense 스킬은 아군(자신 포함)만 대상이 된다 (신규 시스템).
       const isAlly = target.owner === action.player;
-      if (skill.kind === 'heal') {
-        if (!isAlly) return no('치유 스킬은 아군만 대상으로 할 수 있습니다');
+      if (skill.kind === 'heal' || skill.kind === 'defense') {
+        if (!isAlly) return no(`${skill.kind === 'heal' ? '치유' : '방어'} 스킬은 아군만 대상으로 할 수 있습니다`);
       } else if (isAlly) {
         return no('아군은 공격할 수 없습니다');
       }

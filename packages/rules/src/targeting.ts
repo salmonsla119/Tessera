@@ -61,11 +61,11 @@ export function targetableCells(state: MatchState, from: Coord, skill: Skill): C
 
 /**
  * 해당 스킬로 지금 대상 지정할 수 있는 기물.
- * `damage` 스킬은 적만, `heal` 스킬은 아군(자신 포함)만 대상이 된다 (신규 시스템).
+ * `damage` 스킬은 적만, `heal`·`defense` 스킬은 아군(자신 포함)만 대상이 된다 (신규 시스템).
  */
 export function validTargets(state: MatchState, piece: PieceState, skill: Skill): PieceState[] {
   if (!piece.alive || piece.pos === null) return [];
-  const wantAlly = skill.kind === 'heal';
+  const wantAlly = skill.kind === 'heal' || skill.kind === 'defense';
   const targets: PieceState[] = [];
   for (const cell of targetableCells(state, piece.pos, skill)) {
     const occupant = pieceAt(state, cell);

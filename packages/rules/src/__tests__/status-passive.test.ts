@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyAction } from '../resolve';
 import { legalActions } from '../actions';
-import { effectiveAtk, getPiece, isFrozen } from '../state';
+import { effectiveAtk, effectiveEva, getPiece, isFrozen } from '../state';
 import { auraHealTargets, isImmuneToStatus } from '../passives';
 import { deck, place, startedMatch } from './helpers';
 import type { MatchState } from '../types';
@@ -94,6 +94,64 @@ describe('치유 스킬 (신규 시스템)', () => {
     expect(() =>
       applyAction(state, { type: 'attack', player: 'A', pieceId: healerId, skillId: 'heal', targetId: enemyId }),
     ).toThrow();
+  });
+});
+
+describe('방어 스킬 (신규 시스템)', () => {
+  it('아군에게 회피 버프(evaUp)를 걸어 실효 회피율을 올린다', () => {
+    let state = noTerrain(startedMatch(deck('A', ['paladin', 'barrier'], ['guard', 'cleave']), deck('B', ['lancer', 'bolt'])));
+    const casterId = state.pieces.find((p) => p.skillId === 'barrier')!.id;
+    const allyId = state.pieces.find((p) => p.owner === 'A' && p.skillId !== 'barrier')!.id;
+    state = place(state, { [casterId]: { x: 3, y: 3 }, [allyId]: { x: 3, y: 4 } });
+
+    const before = effectiveEva(state, getPiece(state, allyId)!);
+    const result = applyAction(state, { type: 'attack', player: 'A', pieceId: casterId, skillId: 'barrier', targetId: allyId });
+    const buffed = getPiece(result.state, allyId)!;
+
+    expect(buffed.statuses.some((s) => s.kind === 'evaUp')).toBe(true);
+    expect(effectiveEva(result.state, buffed)).toBeGreaterThan(before);
+  });
+
+  it('자기 자신에게도 걸 수 있다', () => {
+    let state = noTerrain(startedMatch(deck('A', ['paladin', 'barrier'], ['guard', 'cleave']), deck('B', ['lancer', 'bolt'])));
+    const casterId = state.pieces.find((p) => p.skillId === 'barrier')!.id;
+
+    const result = applyAction(state, { type: 'attack', player: 'A', pieceId: casterId, skillId: 'barrier', targetId: casterId });
+    expect(getPiece(result.state, casterId)!.statuses.some((s) => s.kind === 'evaUp')).toBe(true);
+  });
+
+  it('checkAction은 방어 스킬로 적을 대상하는 것을 거부한다', () => {
+    let state = noTerrain(startedMatch(deck('A', ['paladin', 'barrier'], ['guard', 'cleave']), deck('B', ['lancer', 'bolt'])));
+    const casterId = state.pieces.find((p) => p.skillId === 'barrier')!.id;
+    const enemyId = state.pieces.find((p) => p.owner === 'B')!.id;
+    state = place(state, { [casterId]: { x: 3, y: 3 }, [enemyId]: { x: 3, y: 4 } });
+
+    expect(() =>
+      applyAction(state, { type: 'attack', player: 'A', pieceId: casterId, skillId: 'barrier', targetId: enemyId }),
+    ).toThrow();
+  });
+
+  it('버프는 buffTurns가 지나면 다른 상태이상처럼 사라진다', () => {
+    let state = noTerrain(startedMatch(deck('A', ['paladin', 'barrier'], ['guard', 'cleave']), deck('B', ['lancer', 'bolt'])));
+    const casterId = state.pieces.find((p) => p.skillId === 'barrier')!.id;
+    const allyId = state.pieces.find((p) => p.owner === 'A' && p.skillId !== 'barrier')!.id;
+    const enemyId = state.pieces.find((p) => p.owner === 'B')!.id;
+    // B의 유일한 기물도 layout에 넣어야 한다 — place()는 언급 안 된 기물을 보드에서 치우는데,
+    // B가 전멸한 것으로 처리되면 다음 턴 시작 때 매치가 곧장 끝나 버려 버프 감소를 볼 수 없다.
+    state = place(state, { [casterId]: { x: 3, y: 3 }, [allyId]: { x: 3, y: 4 }, [enemyId]: { x: 7, y: 7 } });
+
+    let result = applyAction(state, { type: 'attack', player: 'A', pieceId: casterId, skillId: 'barrier', targetId: allyId });
+    expect(getPiece(result.state, allyId)!.statuses.some((s) => s.kind === 'evaUp')).toBe(true);
+
+    // barrier의 buffTurns는 2 — 대상(A) 턴이 시작될 때마다 줄어드니, 충분히 턴을 돌리면 사라져야 한다.
+    // 캐스트 직후 AP 소진으로 곧장 턴이 넘어갈 수도 있어(신규 시스템의 자동 턴 종료 캐스케이드)
+    // 정확한 endTurn 횟수를 가정하지 않고, 상태가 사라질 때까지 넉넉히 반복한다.
+    let s = result.state;
+    for (let i = 0; i < 10 && s.phase !== 'finished'; i++) {
+      if (!getPiece(s, allyId)!.statuses.some((st) => st.kind === 'evaUp')) break;
+      s = applyAction(s, { type: 'endTurn', player: s.turnOwner }).state;
+    }
+    expect(getPiece(s, allyId)!.statuses.some((st) => st.kind === 'evaUp')).toBe(false);
   });
 });
 

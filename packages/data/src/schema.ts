@@ -11,8 +11,11 @@ export const MovePatternSchema = z.object({
 /** 지형 (신규 시스템 — GDD 미기재, 구현 결정 사항). `plain`은 평지(효과 없음)다. */
 export const TerrainKindSchema = z.enum(['plain', 'swamp', 'forest', 'glacier', 'scorched']);
 
-/** 상태이상 종류. `evaDown`·`burn`·`bleed`는 매 턴 값을 적용하고, `freeze`는 행동 자체를 막는다. */
-export const StatusKindSchema = z.enum(['evaDown', 'burn', 'bleed', 'freeze']);
+/**
+ * 상태이상 종류. `evaDown`·`burn`·`bleed`는 매 턴 값을 적용하고, `freeze`는 행동 자체를 막는다.
+ * `evaUp`은 `evaDown`의 반대 방향(양수 보정)으로, 방어 스킬이 아군에게 거는 회피 버프다.
+ */
+export const StatusKindSchema = z.enum(['evaDown', 'burn', 'bleed', 'freeze', 'evaUp']);
 
 /**
  * 베이스 패시브 (신규 시스템). 기물마다 최대 1개.
@@ -57,8 +60,8 @@ export const SkillEffectSchema = z.object({
   turns: z.number().int().min(0),
 });
 
-/** `damage`는 적을, `heal`은 아군(자신 포함)을 대상으로 한다. */
-export const SkillKindSchema = z.enum(['damage', 'heal']);
+/** `damage`는 적을, `heal`·`defense`는 아군(자신 포함)을 대상으로 한다. */
+export const SkillKindSchema = z.enum(['damage', 'heal', 'defense']);
 
 export const SkillSchema = z.object({
   id: z.string().min(1),
@@ -72,6 +75,10 @@ export const SkillSchema = z.object({
   cost: z.number().int().min(0),
   innate: z.boolean(),
   effect: SkillEffectSchema.nullable(),
+  /** 0이면 단일 대상. 그 이상이면 적중 지점 기준 이 반경(체비셰프) 내 다른 적에게도 데미지·부가효과를 준다 (범위 공격, 신규 시스템). */
+  splashRadius: z.number().int().min(0),
+  /** `defense` 스킬 전용 — minDamage~maxDamage로 굴린 회피 버프(evaUp)가 지속되는 턴 수. 그 외 스킬은 0. */
+  buffTurns: z.number().int().min(0),
   note: z.string(),
 });
 

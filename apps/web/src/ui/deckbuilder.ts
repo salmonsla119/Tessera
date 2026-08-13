@@ -11,7 +11,7 @@ import {
 } from '@tessera/data';
 import { accrueAp } from '@tessera/rules';
 import type { StoredDeck } from '../backend/types';
-import { describePassive, SKILL_RANGE_COLOR, SKILL_RANGE_LABEL } from '../game/theme';
+import { describePassive, SKILL_KIND_COLOR, SKILL_KIND_LABEL, SKILL_RANGE_COLOR, SKILL_RANGE_LABEL } from '../game/theme';
 import { $, delegate, esc, html } from './dom';
 
 const SHAPE_LABEL: Record<string, string> = {
@@ -102,15 +102,17 @@ export function renderDeckBuilder(
   function renderSkills(): void {
     html(
       skillsEl,
-      `<thead><tr><th>이름</th><th>유형</th><th>데미지/회복</th><th>사거리</th><th>형태</th><th>SP</th><th>C</th></tr></thead>
+      `<thead><tr><th>이름</th><th>종류</th><th>유형</th><th>데미지/회복</th><th>사거리</th><th>형태</th><th>SP</th><th>C</th></tr></thead>
        <tbody>${SELECTABLE_SKILLS.map((s) => {
-         const amount = `${s.kind === 'heal' ? '+' : ''}${s.minDamage}~${s.maxDamage}`;
+         const amount =
+           s.kind === 'damage' ? `${s.minDamage}~${s.maxDamage}` : `+${s.minDamage}~${s.maxDamage}${s.kind === 'defense' ? '%' : ''}`;
          const category = skillRangeCategory(s);
          const splash = s.splashRadius > 0 ? ` (R${s.splashRadius})` : '';
          return `<tr data-skill="${s.id}" class="${s.id === selectedSkill ? 'selected' : ''}">
             <td>${esc(s.name)}${s.note ? `<div class="muted" style="font-size:11px">${esc(s.note)}</div>` : ''}</td>
+            <td><span class="tag" style="color:${SKILL_KIND_COLOR[s.kind]}">${SKILL_KIND_LABEL[s.kind]}</span></td>
             <td><span class="tag" style="color:${SKILL_RANGE_COLOR[category]}">${SKILL_RANGE_LABEL[category]}${splash}</span></td>
-            <td style="color:${s.kind === 'heal' ? 'var(--ok)' : ''}">${amount}</td><td>${s.range}</td>
+            <td style="color:${s.kind === 'damage' ? '' : SKILL_KIND_COLOR[s.kind]}">${amount}</td><td>${s.range}</td>
             <td>${esc(SHAPE_LABEL[s.shape] ?? s.shape)}</td><td>${s.spCost}</td><td>${s.cost}</td>
           </tr>`;
        }).join('')}</tbody>`,

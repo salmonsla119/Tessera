@@ -60,10 +60,14 @@ function threatCells(state: MatchState, enemyRole: PlayerId): Set<string> {
   return cells;
 }
 
-/** legalActions가 만든 attack 액션 중 damage 스킬만 남긴다 — heal은 별도 로직에서 다룬다. */
+/**
+ * legalActions가 만든 attack 액션 중 damage 스킬만 남긴다 — heal은 별도 로직에서 다룬다.
+ * defense(방어)는 아군 대상이라 기대 데미지 계산에 넣을 수 없어 여기서도 제외한다 — 이 AI는
+ * 아직 방어 스킬을 적극적으로 쓰지 않는다.
+ */
 function damageAttacksOf(actions: Action[]): Extract<Action, { type: 'attack' }>[] {
   return actions.filter(
-    (a): a is Extract<Action, { type: 'attack' }> => a.type === 'attack' && requireSkill(a.skillId).kind !== 'heal',
+    (a): a is Extract<Action, { type: 'attack' }> => a.type === 'attack' && requireSkill(a.skillId).kind === 'damage',
   );
 }
 

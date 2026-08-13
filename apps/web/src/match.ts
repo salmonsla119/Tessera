@@ -88,6 +88,8 @@ export class MatchController {
   private selectedId: string | null = null;
   /** 마지막으로 클릭해 정보를 확인한 기물 — 아군·적군 상관없이 바뀐다. */
   private inspectId: string | null = null;
+  /** 빈 칸을 클릭했을 때 그 칸의 지형을 보여준다 (표시 개선 — 기물을 클릭하면 비운다). */
+  private inspectedTerrainCell: Coord | null = null;
   private activeSkillId: string | null = null;
   /** 예상 데미지를 먼저 보여 주고, 같은 대상을 한 번 더 눌러야 확정된다 (GDD §3.1). */
   private pendingTargetId: string | null = null;
@@ -327,7 +329,13 @@ export class MatchController {
     );
 
     // 정보 확인은 언제든 할 수 있다 — 상대 턴이어도, 아직 공격 대상을 정하지 않았어도 볼 수 있다.
-    if (occupant) this.inspectId = occupant.id;
+    // 빈 칸을 클릭하면 기물 정보 대신 그 칸의 지형 이름·효과를 보여준다 (표시 개선).
+    if (occupant) {
+      this.inspectId = occupant.id;
+      this.inspectedTerrainCell = null;
+    } else {
+      this.inspectedTerrainCell = cell;
+    }
 
     // 고정 시점 모드에서는 상대 턴에 내 화면으로 실제 행동을 넣는 것만 막는다 — 서버도 거부하지만
     // 여기서 막아야 "왜 안 되지" 왕복이 안 생긴다. 정보 카드는 위에서 이미 갱신했으니 그대로 보여 준다.
@@ -338,15 +346,16 @@ export class MatchController {
 
     const attacker = this.selected;
     const activeSkill = this.activeSkillId ? requireSkill(this.activeSkillId) : null;
-    // 치유 스킬이 활성화된 동안에는 아군(자신 포함) 클릭이 "다른 기물 선택"이 아니라
-    // "이 아군을 치유 대상으로" 로 해석된다 — 사거리 밖의 아군은 그대로 선택 가능하다.
-    const isHealTarget =
+    // 치유·방어 스킬이 활성화된 동안에는 아군(자신 포함) 클릭이 "다른 기물 선택"이 아니라
+    // "이 아군을 대상으로" 로 해석된다 — 사거리 밖의 아군은 그대로 선택 가능하다.
+    const isAllyTargetSkill = activeSkill?.kind === 'heal' || activeSkill?.kind === 'defense';
+    const isAllyTarget =
       Boolean(occupant) &&
       attacker !== null &&
-      activeSkill?.kind === 'heal' &&
+      isAllyTargetSkill &&
       validTargets(this.state, attacker, activeSkill).some((t) => t.id === occupant!.id);
 
-    if (occupant && occupant.owner === this.viewer && !isHealTarget) {
+    if (occupant && occupant.owner === this.viewer && !isAllyTarget) {
       this.selectedId = occupant.id;
       this.activeSkillId = this.defaultSkillFor(occupant);
       this.pendingTargetId = null;
@@ -408,6 +417,7 @@ export class MatchController {
       if (this.state.phase === 'finished') {
         this.selectedId = null;
         this.inspectId = null;
+        this.inspectedTerrainCell = null;
         this.refresh();
         await this.showResult();
         return;
@@ -417,6 +427,7 @@ export class MatchController {
         this.selectedId = null;
         this.activeSkillId = null;
         this.inspectId = null;
+        this.inspectedTerrainCell = null;
         this.refresh();
         if (this.fixedViewer) {
           await this.runAutoTurnsIfNeeded();
@@ -555,6 +566,7 @@ export class MatchController {
     this.state = view.state;
     this.selectedId = null;
     this.inspectId = null;
+    this.inspectedTerrainCell = null;
     this.activeSkillId = null;
     this.pendingTargetId = null;
     if (phaseChanged && view.state.phase === 'battle') this.pushLog('전투가 시작되었습니다', undefined, true);
@@ -575,19 +587,20 @@ export class MatchController {
 
     const piece = this.selected;
     if (!piece || !piece.alive || piece.pos === null || this.state.turnOwner !== this.viewer || isFrozen(piece)) {
-      return {};
+      // 조작 중인 기물이 없을 때는 지형을 확인하려고 클릭한 칸을 옅게 표시해 준다 (표시 개선).
+      return { selected: this.inspectedTerrainCell };
     }
 
     // 사거리 형태 전체를 보여준다 — 지금 그 칸에 대상이 있는지와 무관하게, 스킬이 닿는 범위 자체를 보여준다.
-    // damage 스킬은 빨간 칸, heal 스킬은 초록 칸으로 구분한다 (신규 시스템).
+    // damage 스킬은 빨간 칸, heal은 초록 칸, defense는 파란 칸으로 구분한다 (신규 시스템).
     const skill = this.activeSkillId ? requireSkill(this.activeSkillId) : null;
     const cells = skill ? targetableCells(viewState, piece.pos, skill) : [];
-    const isHeal = skill?.kind === 'heal';
 
     return {
       move: this.state.ap[this.viewer] > 0 ? movableCells(viewState, piece) : [],
-      attack: isHeal ? [] : cells,
-      heal: isHeal ? cells : [],
+      attack: skill?.kind === 'damage' ? cells : [],
+      heal: skill?.kind === 'heal' ? cells : [],
+      defense: skill?.kind === 'defense' ? cells : [],
       selected: piece.pos,
     };
   }
@@ -608,8 +621,11 @@ export class MatchController {
         preview = {
           targetName: `${baseName(target.baseId)}(${skillName(target.skillId)})`,
           distance,
-          isHeal: skill.kind === 'heal',
-          range: skill.kind === 'heal' ? previewHeal(skill) : previewDamage(this.state, actingPiece, skill, distance),
+          kind: skill.kind,
+          range:
+            skill.kind === 'heal' || skill.kind === 'defense'
+              ? previewHeal(skill)
+              : previewDamage(this.state, actingPiece, skill, distance),
         };
       }
     }
@@ -640,6 +656,8 @@ export class MatchController {
       isMine: viewedPiece !== null && viewedPiece.owner === viewer,
       selectedTerrain: viewedPiece?.pos ? terrainAt(this.state, viewedPiece.pos) : null,
       selectedPassiveText: viewedPiece ? passiveTextFor(viewedPiece) : null,
+      inspectedTerrain:
+        !viewedPiece && this.inspectedTerrainCell ? terrainAt(this.state, this.inspectedTerrainCell) : null,
       activeSkillId: this.activeSkillId,
       usableSkills: skills,
       lockedSkill: locked,
@@ -713,7 +731,7 @@ function describeEvents(events: readonly GameEvent[], before: MatchState): LogEn
         entries.push({ text: `${nameOf(event.pieceId)} SP −${event.amount}`, owner: ownerOf(event.pieceId) });
         break;
       case 'StatusApplied': {
-        const suffix = event.kind === 'freeze' ? '' : ` −${event.value}`;
+        const suffix = event.kind === 'freeze' ? '' : event.kind === 'evaUp' ? ` +${event.value}` : ` −${event.value}`;
         entries.push({
           text: `${nameOf(event.pieceId)} ${STATUS_LABEL[event.kind]}${suffix} (${event.turns}턴)`,
           owner: ownerOf(event.pieceId),

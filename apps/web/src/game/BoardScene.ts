@@ -7,6 +7,7 @@ export interface Highlights {
   move?: Coord[];
   attack?: Coord[];
   heal?: Coord[];
+  defense?: Coord[];
   deploy?: Coord[];
   selected?: Coord | null;
 }
@@ -248,6 +249,12 @@ export class BoardScene extends Phaser.Scene {
     for (const cell of h.heal ?? []) {
       const { px, py } = toPixel(cell.x, cell.y);
       g.lineStyle(3, COLORS.healHint, 0.9);
+      g.strokeRect(px - CELL / 2 + 2, py - CELL / 2 + 2, CELL - 4, CELL - 4);
+    }
+
+    for (const cell of h.defense ?? []) {
+      const { px, py } = toPixel(cell.x, cell.y);
+      g.lineStyle(3, COLORS.defenseHint, 0.9);
       g.strokeRect(px - CELL / 2 + 2, py - CELL / 2 + 2, CELL - 4, CELL - 4);
     }
 
@@ -533,6 +540,8 @@ function statusFloatText(kind: StatusKind, value: number): string {
   switch (kind) {
     case 'evaDown':
       return `회피 −${value}`;
+    case 'evaUp':
+      return `회피 +${value}`;
     case 'burn':
       return '화상!';
     case 'bleed':
