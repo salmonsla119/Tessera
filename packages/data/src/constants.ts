@@ -62,3 +62,20 @@ export const TERRAIN_MAX_KINDS_PER_MATCH = 3;
 /** 씨앗은 보드 전역에서 뽑는다 — 배치 구역도 지형 대상이다. */
 export const TERRAIN_SEED_Y_MIN = 0;
 export const TERRAIN_SEED_Y_MAX = 7;
+
+/** 가챠 경제 (신규 시스템). 코인 단위는 순전히 내부용이라 실수 단위 없이 정수로만 다룬다. */
+/** 가챠 1회 비용. */
+export const GACHA_PULL_COST = 100;
+/** 계정 생성 시 지급 — 가챠 약 20회분. */
+export const STARTER_GACHA_PULLS = 20;
+export const STARTER_CURRENCY = GACHA_PULL_COST * STARTER_GACHA_PULLS;
+/** 매치 1판 완료(모드 무관)마다 지급 — 가챠 1회분. */
+export const MATCH_REWARD_CURRENCY = GACHA_PULL_COST;
+/** 이미 보유한 항목이 다시 나오면(중복) 절반을 환급한다. */
+export const GACHA_DUPLICATE_REFUND = GACHA_PULL_COST / 2;
+/** 가챠 등급별 확률 (%, 합계 100). */
+export const GACHA_RARITY_WEIGHTS: Readonly<Record<'common' | 'rare' | 'legendary', number>> = {
+  common: 70,
+  rare: 25,
+  legendary: 5,
+};

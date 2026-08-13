@@ -1,7 +1,7 @@
 import { validateDeck } from '@tessera/data';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { deleteDeck, getDeck, listDecks, parseDeckPieces, updateDeck, upsertDeck } from '../db';
+import { deleteDeck, getDeck, listDecks, ownsAllPieces, parseDeckPieces, updateDeck, upsertDeck } from '../db';
 import { newId } from '../auth';
 import { requireAuth } from '../middleware';
 import type { AuthedVars, Env } from '../types';
@@ -27,10 +27,15 @@ app.post('/', async (c) => {
   const validation = validateDeck(parsed.data.pieces);
   if (!validation.ok) return c.json({ error: '덱이 유효하지 않습니다', details: validation.errors }, 400);
 
+  const userId = c.get('userId');
+  if (!(await ownsAllPieces(c.env.DB, userId, parsed.data.pieces))) {
+    return c.json({ error: '보유하지 않은 베이스/스킬이 포함되어 있습니다' }, 400);
+  }
+
   // 클라이언트(RemoteBackend)가 새 덱에도 로컬과 같은 방식으로 id를 미리 붙여 보낸다 — 있으면
   // 그대로 쓰고(업서트), 없으면 서버가 새로 발급한다.
   const id = parsed.data.id ?? newId();
-  await upsertDeck(c.env.DB, { id, userId: c.get('userId'), name: parsed.data.name, pieces: parsed.data.pieces }, Date.now());
+  await upsertDeck(c.env.DB, { id, userId, name: parsed.data.name, pieces: parsed.data.pieces }, Date.now());
   return c.json({ id, name: parsed.data.name, pieces: parsed.data.pieces }, 201);
 });
 
@@ -41,7 +46,12 @@ app.put('/:id', async (c) => {
   const validation = validateDeck(parsed.data.pieces);
   if (!validation.ok) return c.json({ error: '덱이 유효하지 않습니다', details: validation.errors }, 400);
 
-  const result = await updateDeck(c.env.DB, c.req.param('id'), c.get('userId'), parsed.data, Date.now());
+  const userId = c.get('userId');
+  if (!(await ownsAllPieces(c.env.DB, userId, parsed.data.pieces))) {
+    return c.json({ error: '보유하지 않은 베이스/스킬이 포함되어 있습니다' }, 400);
+  }
+
+  const result = await updateDeck(c.env.DB, c.req.param('id'), userId, parsed.data, Date.now());
   if (result.meta.changes === 0) return c.json({ error: '덱을 찾을 수 없습니다' }, 404);
   return c.json({ id: c.req.param('id'), ...parsed.data });
 });
@@ -58,6 +68,7 @@ export async function requireOwnedDeck(db: D1Database, deckId: string, userId: s
   const pieces = parseDeckPieces(row);
   const validation = validateDeck(pieces);
   if (!validation.ok) return null;
+  if (!(await ownsAllPieces(db, userId, pieces))) return null;
   return { name: row.name, pieces };
 }
 

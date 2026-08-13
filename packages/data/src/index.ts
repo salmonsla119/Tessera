@@ -1,6 +1,6 @@
 import basesRaw from './bases.json';
 import skillsRaw from './skills.json';
-import { BaseSchema, SkillSchema, type Base, type Skill, type Deck, type DeckPiece } from './schema';
+import { BaseSchema, SkillSchema, type Base, type Skill, type Deck, type DeckPiece, type Rarity } from './schema';
 import { DECK_BUDGET, MAX_PIECES } from './constants';
 
 export * from './schema';
@@ -42,6 +42,23 @@ export const SELECTABLE_SKILLS: readonly Skill[] = SKILLS.filter((s) => !s.innat
 /** 계정 생성 시 가챠 없이 기본 지급되는 베이스/스킬 ID (신규 시스템 — 가챠). */
 export const STARTER_BASE_IDS: readonly string[] = BASES.filter((b) => b.starter).map((b) => b.id);
 export const STARTER_SKILL_IDS: readonly string[] = SKILLS.filter((s) => s.starter).map((s) => s.id);
+
+/**
+ * 가챠 대상 (신규 시스템). 시작 지급 항목은 이미 전원이 보유하므로 가챠 풀에서 제외한다.
+ * 기본 공격(`basic`)은 애초에 덱빌딩에서 선택할 수 없는 무료 보유 스킬이라 풀에 넣지 않는다.
+ */
+export const GACHA_BASE_POOL: readonly Base[] = BASES.filter((b) => !b.starter);
+export const GACHA_SKILL_POOL: readonly Skill[] = SKILLS.filter((s) => !s.starter && !s.innate);
+
+export type GachaItemType = 'base' | 'skill';
+
+/** 가챠 대상을 등급별로 묶는다 — 실제 뽑기(랜덤 굴림)는 신뢰 가능한 난수가 필요해 서버에서만 한다. */
+export function gachaPoolByRarity(itemType: GachaItemType): Record<Rarity, readonly string[]> {
+  const pool = itemType === 'base' ? GACHA_BASE_POOL : GACHA_SKILL_POOL;
+  const result: Record<Rarity, string[]> = { common: [], rare: [], legendary: [] };
+  for (const item of pool) result[item.rarity].push(item.id);
+  return result;
+}
 
 /**
  * 스킬 사거리 유형 (신규 시스템). 셋 중 하나로만 나눈다:

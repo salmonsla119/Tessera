@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import authRoutes from './routes/auth';
 import deckRoutes from './routes/decks';
+import gachaRoutes from './routes/gacha';
 import matchRoutes from './routes/matches';
 import queueRoutes from './routes/queue';
 import { listMatchesPastDeadline, parseMatchState, persistAction } from './db';
@@ -28,6 +29,7 @@ app.route('/auth', authRoutes);
 app.route('/decks', deckRoutes);
 app.route('/queue', queueRoutes);
 app.route('/matches', matchRoutes);
+app.route('/', gachaRoutes);
 
 export default {
   fetch: app.fetch,

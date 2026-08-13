@@ -1,4 +1,4 @@
-import type { DeckPiece } from '@tessera/data';
+import { STARTER_BASE_IDS, STARTER_SKILL_IDS, STARTER_CURRENCY, type DeckPiece } from '@tessera/data';
 import type { MatchState, PlayerId } from '@tessera/rules';
 
 export interface UserRow {
@@ -284,4 +284,119 @@ export async function getValidInvite(db: D1Database, code: string, now: number):
 
 export async function deleteInvite(db: D1Database, code: string): Promise<void> {
   await db.prepare('DELETE FROM match_invites WHERE code = ?').bind(code).run();
+}
+
+export type GachaItemType = 'base' | 'skill';
+
+/** 계정 생성 시 1회 호출 — 시작 재화와 시작 지급 4베이스/4스킬을 한 배치로 부여한다. */
+export async function grantStarterAccount(db: D1Database, userId: string, now: number): Promise<void> {
+  await db.batch([
+    db.prepare('INSERT INTO currency (user_id, balance, updated_at) VALUES (?, ?, ?)').bind(userId, STARTER_CURRENCY, now),
+    ...STARTER_BASE_IDS.map((id) =>
+      db
+        .prepare('INSERT INTO inventory (user_id, item_type, item_id, unlocked_at) VALUES (?, ?, ?, ?)')
+        .bind(userId, 'base', id, now),
+    ),
+    ...STARTER_SKILL_IDS.map((id) =>
+      db
+        .prepare('INSERT INTO inventory (user_id, item_type, item_id, unlocked_at) VALUES (?, ?, ?, ?)')
+        .bind(userId, 'skill', id, now),
+    ),
+  ]);
+}
+
+export async function getCurrency(db: D1Database, userId: string): Promise<number> {
+  const row = await db.prepare('SELECT balance FROM currency WHERE user_id = ?').bind(userId).first<{ balance: number }>();
+  return row?.balance ?? 0;
+}
+
+/** 잔액이 충분할 때만 원자적으로 차감한다 (동시 요청으로 잔액을 초과 소비하는 레이스 방지). */
+export async function trySpendCurrency(db: D1Database, userId: string, amount: number, now: number): Promise<boolean> {
+  const result = await db
+    .prepare('UPDATE currency SET balance = balance - ?, updated_at = ? WHERE user_id = ? AND balance >= ?')
+    .bind(amount, now, userId, amount)
+    .run();
+  return result.meta.changes > 0;
+}
+
+export async function addCurrency(db: D1Database, userId: string, amount: number, now: number): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO currency (user_id, balance, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET balance = balance + excluded.balance, updated_at = excluded.updated_at`,
+    )
+    .bind(userId, amount, now)
+    .run();
+}
+
+export interface InventoryRow {
+  item_type: GachaItemType;
+  item_id: string;
+}
+
+export async function listInventory(db: D1Database, userId: string): Promise<InventoryRow[]> {
+  const result = await db
+    .prepare('SELECT item_type, item_id FROM inventory WHERE user_id = ?')
+    .bind(userId)
+    .all<InventoryRow>();
+  return result.results;
+}
+
+export async function isOwned(db: D1Database, userId: string, itemType: GachaItemType, itemId: string): Promise<boolean> {
+  const row = await db
+    .prepare('SELECT 1 FROM inventory WHERE user_id = ? AND item_type = ? AND item_id = ?')
+    .bind(userId, itemType, itemId)
+    .first();
+  return row !== null;
+}
+
+export async function unlockItem(
+  db: D1Database,
+  userId: string,
+  itemType: GachaItemType,
+  itemId: string,
+  now: number,
+): Promise<void> {
+  await db
+    .prepare('INSERT OR IGNORE INTO inventory (user_id, item_type, item_id, unlocked_at) VALUES (?, ?, ?, ?)')
+    .bind(userId, itemType, itemId, now)
+    .run();
+}
+
+export async function insertGachaPull(
+  db: D1Database,
+  row: {
+    id: string;
+    userId: string;
+    itemType: GachaItemType;
+    itemId: string;
+    rarity: string;
+    duplicate: boolean;
+    refund: number;
+  },
+  now: number,
+): Promise<void> {
+  await db
+    .prepare(
+      'INSERT INTO gacha_pulls (id, user_id, item_type, item_id, rarity, duplicate, refund, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(row.id, row.userId, row.itemType, row.itemId, row.rarity, row.duplicate ? 1 : 0, row.refund, now)
+    .run();
+}
+
+/** 매치 완료 보상 지급. 이미 지급된 키면 아무 것도 하지 않고 false를 반환한다 (중복 지급 방지). */
+export async function claimMatchReward(db: D1Database, userId: string, matchKey: string, now: number): Promise<boolean> {
+  const result = await db
+    .prepare('INSERT OR IGNORE INTO match_rewards_claimed (user_id, match_key, created_at) VALUES (?, ?, ?)')
+    .bind(userId, matchKey, now)
+    .run();
+  return result.meta.changes > 0;
+}
+
+/** 덱에 쓰인 베이스/스킬을 전부 보유하고 있는지 확인한다 (서버 재검증 — PLAN §4.2 연장선). */
+export async function ownsAllPieces(db: D1Database, userId: string, pieces: readonly DeckPiece[]): Promise<boolean> {
+  const owned = await listInventory(db, userId);
+  const ownedBases = new Set(owned.filter((r) => r.item_type === 'base').map((r) => r.item_id));
+  const ownedSkills = new Set(owned.filter((r) => r.item_type === 'skill').map((r) => r.item_id));
+  return pieces.every((p) => ownedBases.has(p.baseId) && ownedSkills.has(p.skillId));
 }

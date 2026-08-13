@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { createSessionToken, hashPassword, newId, SESSION_TTL_MS, verifyPassword } from '../auth';
-import { createSession, createUser, deleteSession, getUserById, getUserByUsername } from '../db';
+import { createSession, createUser, deleteSession, getUserById, getUserByUsername, grantStarterAccount } from '../db';
 import { requireAuth, SESSION_COOKIE } from '../middleware';
 import type { AuthedVars, Env } from '../types';
 
@@ -38,6 +38,7 @@ app.post('/signup', async (c) => {
   const now = Date.now();
   const userId = newId();
   await createUser(c.env.DB, { id: userId, username, passwordHash: await hashPassword(password) }, now);
+  await grantStarterAccount(c.env.DB, userId, now);
 
   const token = createSessionToken();
   await createSession(c.env.DB, { token, userId }, now, SESSION_TTL_MS);
