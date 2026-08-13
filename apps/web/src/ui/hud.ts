@@ -1,6 +1,15 @@
-import { requireBase, type Skill, type TerrainKind } from '@tessera/data';
+import { requireBase, skillRangeCategory, type Skill, type TerrainKind } from '@tessera/data';
 import { formatCarry, type DamageRange, type PieceState, type PlayerId } from '@tessera/rules';
-import { baseName, skillName, STATUS_COLOR, STATUS_LABEL, TERRAIN_LABEL, TERRAIN_NOTE } from '../game/theme';
+import {
+  baseName,
+  skillName,
+  SKILL_RANGE_COLOR,
+  SKILL_RANGE_LABEL,
+  STATUS_COLOR,
+  STATUS_LABEL,
+  TERRAIN_LABEL,
+  TERRAIN_NOTE,
+} from '../game/theme';
 import { delegate, esc, html } from './dom';
 
 export interface LogEntry {
@@ -37,6 +46,8 @@ export interface HudModel {
   selectedTerrain: TerrainKind | null;
   /** selected 베이스의 패시브 설명 — 없으면 null (신규 시스템). */
   selectedPassiveText: string | null;
+  /** 기물 없이 빈 칸만 클릭했을 때 그 칸의 지형 — 평지거나 기물을 보고 있으면 null (표시 개선). */
+  inspectedTerrain: TerrainKind | null;
   activeSkillId: string | null;
   usableSkills: Skill[];
   /** SP 부족으로 잠긴 편성 스킬 — 잠금 상태를 보여 주려고 따로 받는다. */
@@ -167,7 +178,13 @@ export class Hud {
   private selectedBlock(model: HudModel): string {
     const piece = model.selected;
     if (!piece) {
-      return `<div class="hud-block"><p class="muted" style="margin:0">기물을 선택하세요.</p></div>`;
+      if (model.inspectedTerrain && model.inspectedTerrain !== 'plain') {
+        return `<div class="hud-block">
+          <strong>${esc(TERRAIN_LABEL[model.inspectedTerrain])}</strong>
+          <p class="muted" style="margin:8px 0 0;font-size:13px">${esc(TERRAIN_NOTE[model.inspectedTerrain])}</p>
+        </div>`;
+      }
+      return `<div class="hud-block"><p class="muted" style="margin:0">기물이나 지형을 클릭하세요.</p></div>`;
     }
 
     const base = requireBase(piece.baseId);
@@ -177,9 +194,13 @@ export class Hud {
     const skillButtons = model.usableSkills
       .map((skill) => {
         const amount = `${skill.kind === 'heal' ? '+' : ''}${skill.minDamage}~${skill.maxDamage}`;
+        const splash = skill.splashRadius > 0 ? ` · 범위 R${skill.splashRadius}` : '';
+        const rangeCategory = skillRangeCategory(skill);
         return `<button data-skill="${esc(skill.id)}" class="${model.activeSkillId === skill.id ? 'active' : ''}">
-          <span>${esc(skill.name)} <span class="muted" style="color:${skill.kind === 'heal' ? 'var(--ok)' : ''}">${amount}</span></span>
-          <span class="cost">사거리 ${skill.range} · SP ${skill.spCost}</span>
+          <span>${esc(skill.name)}
+            <span class="tag" style="color:${SKILL_RANGE_COLOR[rangeCategory]}">${SKILL_RANGE_LABEL[rangeCategory]}</span>
+            <span class="muted" style="color:${skill.kind === 'heal' ? 'var(--ok)' : ''}">${amount}</span></span>
+          <span class="cost">사거리 ${skill.range} · SP ${skill.spCost}${splash}</span>
         </button>`;
       })
       .join('');
