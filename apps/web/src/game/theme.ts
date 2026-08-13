@@ -130,33 +130,6 @@ export function ownerColor(owner: PlayerId): number {
   return owner === 'A' ? COLORS.playerA : COLORS.playerB;
 }
 
-const SHORT_LABEL: Record<string, string> = {
-  guard: '방',
-  lancer: '창',
-  rider: '기',
-  acolyte: '사',
-  ranger: '순',
-  warlord: '장',
-  mystic: '주',
-  berserker: '광',
-  paladin: '성',
-  assassin: '자',
-  shaman: '토',
-  templar: '단',
-  frostguard: '서',
-  swampstalker: '늪',
-  pyromancer: '화',
-  aegisguard: '수',
-  reaver: '약',
-  warbringer: '전',
-  oracle: '예',
-  duskblade: '황',
-};
-
-export function pieceLabel(baseId: string): string {
-  return SHORT_LABEL[baseId] ?? '?';
-}
-
 export function baseName(baseId: string): string {
   return getBase(baseId)?.name ?? '???';
 }

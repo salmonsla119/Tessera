@@ -131,6 +131,7 @@ pnpm --filter @tessera/server deploy       # wrangler deploy
 | 로컬/AI 매치 보상의 신뢰 경계 | 온라인 매치(`mode: 'online'`)는 실제 매치 참가·종료 여부를 서버가 검증하지만, 로컬/AI 핫싯(`mode: 'local'\|'ai'`)은 서버에 매치 기록 자체가 없어 **같은 청구 키의 중복 지급만 막을 뿐, 클라이언트가 매번 새 키로 반복 청구하는 것은 막지 못한다** | 로컬/AI 매치는 애초에 서버를 거치지 않고 브라우저에서만 진행되므로(§ "AI 대전" 참고) 서버가 검증할 근거가 없음 — 실물 재화가 아닌 내부 게임 재화라 당장은 감수할 만한 트레이드오프로 판단, 악용이 문제 되면 클라이언트에 매치당 1회 청구를 강제하는 UX 제약을 추가하는 쪽으로 보완 예정 — `server/src/routes/gacha.ts` |
 | 로컬/AI 덱빌더의 보유 게이트 우회 | `renderDeckBuilder`에 `ownership`을 넘기지 않으면 전부 보유한 것으로 취급 — 온라인 덱빌더(`app.ts` `showOnlineDeckBuilder`)만 계정 인벤토리를 조회해 넘긴다 | 로컬 핫시트·AI 대전은 계정이 아예 필요 없는 모드라, 여기에도 가챠 게이트를 걸면 "계정 없이 바로 즐기기"라는 기존 특성이 깨짐 — `web/src/ui/deckbuilder.ts` `Ownership` |
 | 매치 완료 보상 청구 시점 | 모드 무관하게 `MatchController.showResult()` 한 곳에서만 청구 — 온라인은 실제 매치 ID, 로컬/AI는 그 매치의 클라이언트 생성 ID(`local-<seed36>`/`ai-<seed36>`)를 그대로 청구 키로 재사용 | 세 백엔드(`local`/`ai`/`remote`)가 이미 `Backend.kind`로 구분되고 결과 화면도 공유하므로, 별도 훅을 모드별로 만들 필요 없이 한 지점에서 끝남 — 로그인하지 않은 상태의 청구 실패는 조용히 무시(게임 진행에 영향 없음) — `web/src/match.ts` `claimMatchReward()` |
+| 유닛 베이스 문양(단색 표시 이미지) | 이미지/SVG 에셋 파이프라인이 없어 Phaser `Graphics`로 20종 베이스마다 작은 벡터 문양(방패·창·말머리·십자가·활 등)을 그때그때 그린다. 색은 하나(호출자가 넘긴 진영색)만 쓴다 | 보드 위 기물이 쓰던 한 글자 라벨(`SHORT_LABEL`/`pieceLabel`)을 대체 — 문양 색이 곧 진영 표시라 기존의 테두리 색과 이중으로 진영을 알려준다 — `web/src/game/glyphs.ts` `drawBaseGlyph()` |
 
 AP 이월은 0.1을 실수로 더하는 대신 **1/10 단위 정수**로 누적한다. 100턴을 굴려도 오차가 없다는 것을 테스트로 고정해 뒀다.
 
